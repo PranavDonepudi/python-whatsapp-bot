@@ -6,9 +6,11 @@ import time
 import logging
 
 load_dotenv()
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 client = OpenAI(api_key=OPENAI_API_KEY)
+print("OPENAI_API_KEY found:", bool(OPENAI_API_KEY))  # Should print True
 
 
 def upload_file(path):
@@ -21,8 +23,12 @@ def create_assistant(file):
     You currently cannot set the temperature for Assistant via the API.
     """
     assistant = client.beta.assistants.create(
-        name="WhatsApp AirBnb Assistant",
-        instructions="You're a helpful WhatsApp assistant that can assist guests that are staying in our Paris AirBnb. Use your knowledge base to best respond to customer queries. If you don't know the answer, say simply that you cannot help with question and advice to contact the host directly. Be friendly and funny.",
+        name="WhatsApp Recruitment Assistant",
+        instructions="You are a friendly and professional assistant for TechnoGen, an IT consulting company. "
+        "Your task is to inform job candidates when they are selected for roles, provide helpful follow-up, "
+        "and guide them on next steps (e.g., submitting updated resumes, scheduling interviews, etc). "
+        "If a candidate responds with queries, answer based on typical recruitment scenarios. "
+        "If unsure, suggest they reach out to the TechnoGen team.",
         tools=[{"type": "retrieval"}],
         model="gpt-4-1106-preview",
     )
