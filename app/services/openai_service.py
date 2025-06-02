@@ -12,13 +12,14 @@ OPENAI_ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 client = OpenAI(api_key=OPENAI_API_KEY)
 print("OPENAI_API_KEY found:", bool(OPENAI_API_KEY))  # Should print True
 
-
+"""
 def upload_file(path):
     # Upload a file with an "assistants" purpose
     file = client.files.create(file=open(path, "rb"), purpose="assistants")
+"""
 
 
-def create_assistant(file):
+def create_assistant():
     """
     You currently cannot set the temperature for Assistant via the API.
     """
@@ -54,7 +55,7 @@ def run_assistant(thread, name):
     run = client.beta.threads.runs.create(
         thread_id=thread.id,
         assistant_id=assistant.id,
-        # instructions=f"You are having a conversation with {name}",
+        instructions=f"You are talking to {name}, a job candidate. Be warm and professional.",
     )
 
     # Wait for completion
@@ -65,6 +66,7 @@ def run_assistant(thread, name):
         run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
 
     # Retrieve the Messages
+
     messages = client.beta.threads.messages.list(thread_id=thread.id)
     new_message = messages.data[0].content[0].text.value
     logging.info(f"Generated message: {new_message}")
@@ -106,10 +108,11 @@ def generate_response(message_body, wa_id, name):
         thread = client.beta.threads.retrieve(thread_id)
 
     # Add message to thread
+    personalized_prompt = f"The candidate's name is {name}. Respond to the following message accordingly:\n\n{message_body}"
     message = client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
-        content=message_body,
+        content=personalized_prompt,
     )
 
     # Run the assistant and get the new message
