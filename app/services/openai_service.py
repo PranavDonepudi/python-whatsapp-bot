@@ -10,13 +10,6 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 client = OpenAI(api_key=OPENAI_API_KEY)
-print("OPENAI_API_KEY found:", bool(OPENAI_API_KEY))  # Should print True
-
-"""
-def upload_file(path):
-    # Upload a file with an "assistants" purpose
-    file = client.files.create(file=open(path, "rb"), purpose="assistants")
-"""
 
 
 def create_assistant():
@@ -69,7 +62,7 @@ def run_assistant(thread, name):
 
     messages = client.beta.threads.messages.list(thread_id=thread.id)
     new_message = messages.data[0].content[0].text.value
-    logging.info(f"Generated message: {new_message}")
+    logging.info("Generated message: %s", new_message)
     return new_message
 
 
@@ -84,7 +77,7 @@ def handle_candidate_reply(message, wa_id, name):
             "The candidate agreed to proceed. What should we say next?", wa_id, name
         )
     elif "no" in message_lower:
-        response = "No problem. Let us know if you’d like to be considered for future opportunities!"
+        response = "No problem. Let us know if you would like to be considered for future opportunities!"
     else:
         response = generate_response(message, wa_id, name)
 
@@ -97,19 +90,19 @@ def generate_response(message_body, wa_id, name):
 
     # If a thread doesn't exist, create one and store it
     if thread_id is None:
-        logging.info(f"Creating new thread for {name} with wa_id {wa_id}")
+        logging.info("Creating new thread for %s with wa_id %s", name, wa_id)
         thread = client.beta.threads.create()
         store_thread(wa_id, thread.id)
         thread_id = thread.id
 
     # Otherwise, retrieve the existing thread
     else:
-        logging.info(f"Retrieving existing thread for {name} with wa_id {wa_id}")
+        logging.info("Retrieving existing thread for %s with wa_id %s", name, wa_id)
         thread = client.beta.threads.retrieve(thread_id)
 
     # Add message to thread
-    personalized_prompt = f"The candidate's name is {name}. Respond to the following message accordingly:\n\n{message_body}"
-    message = client.beta.threads.messages.create(
+    personalized_prompt = f"The candidate's name is {name}.Respond to the following message accordingly:\n\n{message_body},This message is from Hiring Manager at TechnoGen. Please respond in a warm and professional manager at Technogen."
+    client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
         content=personalized_prompt,

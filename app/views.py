@@ -56,7 +56,7 @@ def handle_message():
 
 # Required webhook verifictaion for WhatsApp
 def verify():
-    logging.info(f"Expected VERIFY_TOKEN: {current_app.config.get('VERIFY_TOKEN')}")
+    logging.info("Expected VERIFY_TOKEN: %s", current_app.config.get("VERIFY_TOKEN"))
     # Parse params from the webhook verification request
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")

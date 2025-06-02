@@ -28,11 +28,6 @@ def get_text_message_input(recipient, text):
     )
 
 
-"""def generate_response(response):
-    # Return text in uppercase
-    return response.upper()"""
-
-
 def send_message(data):
     headers = {
         "Content-type": "application/json",
@@ -52,7 +47,7 @@ def send_message(data):
     except (
         requests.RequestException
     ) as e:  # This will catch any general request exception
-        logging.error(f"Request failed due to: {e}")
+        logging.error("Request failed due to: %s", e)
         return jsonify({"status": "error", "message": "Failed to send message"}), 500
     else:
         # Process the response as normal
