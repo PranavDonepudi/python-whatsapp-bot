@@ -2,15 +2,14 @@ import logging
 from flask import current_app, jsonify
 import json
 import requests
-
 from app.services.openai_service import generate_response
 import re
 
 
 def log_http_response(response):
-    logging.info(f"Status: {response.status_code}")
-    logging.info(f"Content-type: {response.headers.get('content-type')}")
-    logging.info(f"Body: {response.text}")
+    logging.info("Status: %s", response.status_code)
+    logging.info("Content-type: %s", response.headers.get("content-type"))
+    logging.info("Body: %s", response.text)
 
 
 def get_text_message_input(recipient, text):
