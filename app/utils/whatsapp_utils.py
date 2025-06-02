@@ -2,7 +2,10 @@ import logging
 from flask import current_app, jsonify
 import json
 import requests
-from app.services.openai_service import generate_response, check_if_thread_exists
+from app.services.openai_service import (
+    check_if_thread_exists,
+    handle_candidate_reply,
+)
 import re
 
 
@@ -87,14 +90,14 @@ def process_whatsapp_message(body):
     if not thread_id:
         # First-time candidate → Send default greeting
         default_msg = (
-            f"Hi {name}, congratulations! 🎉 You have been selected for a role at TechnoGen. "
+            f"Hi {name}, Congratulations! 🎉 You have been selected for a role at TechnoGen. "
             "Reply *yes* if you're interested or *update* if you'd like to send a new resume."
         )
         formatted_msg = process_text_for_whatsapp(default_msg)
     else:
-        # Follow-up messages → Send to OpenAI
-        formatted_msg = generate_response(message_body, wa_id, name)
-        formatted_msg = process_text_for_whatsapp(formatted_msg)
+        # Follow-up messages → use custom logic (yes/no/update) + OpenAI fallback
+        response = handle_candidate_reply(message_body, wa_id, name)
+        formatted_msg = process_text_for_whatsapp(response)
 
     data = get_text_message_input(current_app.config["RECIPIENT_WAID"], formatted_msg)
     send_message(data)

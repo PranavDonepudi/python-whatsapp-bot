@@ -71,6 +71,24 @@ def run_assistant(thread, name):
     return new_message
 
 
+def handle_candidate_reply(message, wa_id, name):
+    message_lower = message.lower().strip()
+
+    if "update" in message_lower:
+        response = "Sure! Please upload your updated resume and our team will review it shortly."
+    elif "yes" in message_lower:
+        # You can modify this prompt if needed
+        response = generate_response(
+            "The candidate agreed to proceed. What should we say next?", wa_id, name
+        )
+    elif "no" in message_lower:
+        response = "No problem. Let us know if you’d like to be considered for future opportunities!"
+    else:
+        response = generate_response(message, wa_id, name)
+
+    return response
+
+
 def generate_response(message_body, wa_id, name):
     # Check if there is already a thread_id for the wa_id
     thread_id = check_if_thread_exists(wa_id)
