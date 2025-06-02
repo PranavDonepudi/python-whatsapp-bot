@@ -101,7 +101,7 @@ def generate_response(message_body, wa_id, name):
         thread = client.beta.threads.retrieve(thread_id)
 
     # Add message to thread
-    personalized_prompt = f"The candidate's name is {name}.Respond to the following message accordingly:\n\n{message_body},This message is from Hiring Manager at TechnoGen.No need to end with Warm regards or similar, just answer the question."
+    personalized_prompt = f"The candidate's name is {name}.Respond to the following message accordingly:\n\n{message_body},This message is from Hiring Manager at TechnoGen. Tell the candidate what to do next or try to answer any query. Please respond in a warm and professional manner."
     client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
