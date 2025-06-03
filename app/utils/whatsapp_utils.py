@@ -5,6 +5,8 @@ import requests
 from app.services.openai_service import check_if_thread_exists, handle_candidate_reply
 from app.services.openai_service import store_thread  # Import store_thread
 import re
+import os
+from datetime import datetime
 
 # Import or initialize the OpenAI client
 from app.services.openai_service import client
@@ -55,6 +57,40 @@ def send_message(data):
         return response
 
 
+# --- WhatsApp Media Download Helper ---
+def download_whatsapp_media(media_id):
+    headers = {
+        "Authorization": f"Bearer {current_app.config['ACCESS_TOKEN']}",
+    }
+
+    # Step 1: Get media URL
+    meta_url = f"https://graph.facebook.com/v18.0/{media_id}"
+    meta_res = requests.get(meta_url, headers=headers)
+    media_url = meta_res.json().get("url")
+
+    # Step 2: Download media
+    media_res = requests.get(media_url, headers=headers)
+    return media_res.content, media_res.headers.get("Content-Type")
+
+
+# Helper to save file locally
+def save_file_locally(file_bytes, filename):
+    base_path = os.path.join(os.getcwd(), "resumes")
+    if not os.path.exists(base_path):
+        os.makedirs(base_path)
+
+    # Create unique filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_filename = f"{timestamp}_{filename}"
+    full_path = os.path.join(base_path, safe_filename)
+
+    with open(full_path, "wb") as f:
+        f.write(file_bytes)
+
+    logging.info(f"Saved file locally at: {full_path}")
+    return full_path
+
+
 def process_text_for_whatsapp(text):
     # Remove brackets
     pattern = r"\【.*?\】"
@@ -74,31 +110,58 @@ def process_text_for_whatsapp(text):
 
 
 def process_whatsapp_message(body):
-    wa_id = body["entry"][0]["changes"][0]["value"]["contacts"][0]["wa_id"]
-    name = body["entry"][0]["changes"][0]["value"]["contacts"][0]["profile"]["name"]
-
-    message = body["entry"][0]["changes"][0]["value"]["messages"][0]
-    message_body = message["text"]["body"]
+    value = body["entry"][0]["changes"][0]["value"]
+    wa_id = value["contacts"][0]["wa_id"]
+    name = value["contacts"][0]["profile"]["name"]
+    message = value["messages"][0]
+    msg_type = message["type"]
 
     # Check if this is a new candidate or first message
     thread_id = check_if_thread_exists(wa_id)
 
-    if not thread_id:
-        # Mark thread as created so we don't send default message again
-        thread = client.beta.threads.create()
-        store_thread(wa_id, thread.id)
-        # First-time candidate → Send default greeting
-        default_msg = (
-            f"Hi {name}, Congratulations! 🎉 You have been selected for a role at TechnoGen. "
-            "Reply *yes* if you're interested or *update* if you'd like to send a new resume."
-        )
-        formatted_msg = process_text_for_whatsapp(default_msg)
+    # --- Handle Document Upload ---
+    if msg_type == "document":
+        media_id = message["document"]["id"]
+        filename = message["document"].get("filename", f"{wa_id}_{uuid.uuid4()}.pdf")
+
+        file_bytes, content_type = download_whatsapp_media(media_id)
+
+        # Validate file type (allow only PDFs and DOCs)
+        if content_type not in [
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ]:
+            reply = "Only PDF or Word document resumes are accepted. Please upload a valid file."
+        else:
+            save_file_locally(file_bytes, filename)
+            reply = f"Thanks {name}, we’ve successfully received your resume!"
+
+        formatted_msg = process_text_for_whatsapp(reply)
+
+    # --- Handle Text Message ---
+    elif msg_type == "text":
+        message_body = message["text"]["body"]
+        if not thread_id:
+            thread = client.beta.threads.create()
+            store_thread(wa_id, thread.id)
+            default_msg = (
+                f"Hi {name}, Congratulations! 🎉 You have been selected for a role at TechnoGen. "
+                "Reply *yes* if you're interested or *update* if you'd like to send a new resume."
+            )
+            formatted_msg = process_text_for_whatsapp(default_msg)
+        else:
+            formatted_msg = process_text_for_whatsapp(
+                handle_candidate_reply(message_body, wa_id, name)
+            )
+
     else:
-        # Follow-up messages → use custom logic (yes/no/update) + OpenAI fallback
-        formatted_msg = handle_candidate_reply(message_body, wa_id, name)
+        formatted_msg = (
+            f"Sorry {name}, we only support text and resume file messages at this time."
+        )
         formatted_msg = process_text_for_whatsapp(formatted_msg)
 
-    data = get_text_message_input(current_app.config["RECIPIENT_WAID"], formatted_msg)
+    data = get_text_message_input(wa_id, formatted_msg)
     send_message(data)
 
 
