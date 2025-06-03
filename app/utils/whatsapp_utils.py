@@ -6,6 +6,7 @@ from app.services.openai_service import check_if_thread_exists, handle_candidate
 from app.services.openai_service import store_thread  # Import store_thread
 import re
 import os
+import uuid
 from datetime import datetime
 
 # Import or initialize the OpenAI client
