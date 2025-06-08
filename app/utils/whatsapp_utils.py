@@ -17,14 +17,6 @@ from app.services.openai_service import (
     handle_candidate_reply,
 )
 
-# you can omit aws_access_key_id/secret and region_name here)
-s3_client = boto3.client(
-    "s3",
-    aws_access_key_id=current_app.config.get("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=current_app.config.get("AWS_SECRET_ACCESS_KEY"),
-    region_name=current_app.config.get("AWS_REGION", "us-east-2"),
-)
-
 
 def log_http_response(response):
     logging.info("Status: %s", response.status_code)
@@ -71,27 +63,31 @@ def send_message(data):
         return response
 
 
+def _get_s3_client():
+    """Create an S3 client _inside_ an app context."""
+    return boto3.client(
+        "s3",
+        aws_access_key_id=current_app.config["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=current_app.config["AWS_SECRET_ACCESS_KEY"],
+        region_name=current_app.config.get("AWS_REGION", "us-east-1"),
+    )
+
+
 # --- WhatsApp Media Download Helper ---
 def download_whatsapp_media(media_id, filename=None):
-    """
-    Fetch raw bytes + content-type for a given WhatsApp media_id.
-    Returns: (file_bytes, filename, content_type)
-    """
     headers = {
         "Authorization": f"Bearer {current_app.config['ACCESS_TOKEN']}",
     }
-
-    # 1) Get the temporary media download URL
+    # 1) fetch the media URL
     meta_url = f"https://graph.facebook.com/v18.0/{media_id}"
     meta_res = requests.get(meta_url, headers=headers)
     media_url = meta_res.json().get("url")
 
-    # 2) Download the actual file
+    # 2) download the bytes
     media_res = requests.get(media_url, headers=headers)
     content_type = media_res.headers.get("Content-Type")
     file_bytes = media_res.content
 
-    # Derive a fallback filename if none provided
     if not filename:
         ext = content_type.split("/")[-1]
         filename = f"{media_id}.{ext}"
@@ -102,21 +98,20 @@ def download_whatsapp_media(media_id, filename=None):
 # Helper to save file locally
 def save_file_to_s3(file_bytes, filename, content_type):
     """
-    Uploads the given bytes into your S3 bucket under a timestamped key.
-    Returns the public S3 URL.
+    Upload bytes into S3 under a timestamped key.
+    Must be called with an active Flask app context.
     """
-    bucket = current_app.config["RESUME_BUCKET"]  # e.g. "my-company-resumes-2025"
+    bucket = current_app.config["RESUME_BUCKET"]
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     safe_filename = f"{timestamp}_{filename}"
-    s3_key = f"resumes/{safe_filename}"
+    key = f"resumes/{safe_filename}"
 
-    s3_client.put_object(
-        Bucket=bucket, Key=s3_key, Body=file_bytes, ContentType=content_type
-    )
+    s3 = _get_s3_client()
+    s3.put_object(Bucket=bucket, Key=key, Body=file_bytes, ContentType=content_type)
 
-    s3_url = f"https://{bucket}.s3.amazonaws.com/{s3_key}"
-    logging.info(f"Saved file to S3 at: {s3_url}")
-    return s3_url
+    url = f"https://{bucket}.s3.amazonaws.com/{key}"
+    logging.info(f"Saved file to S3 at: {url}")
+    return url
 
 
 def process_text_for_whatsapp(text):
