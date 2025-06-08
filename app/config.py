@@ -20,6 +20,7 @@ def load_configurations(app):
     app.config["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
     app.config["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
     app.config["AWS_REGION"] = os.getenv("AWS_REGION", "us-east-1")
+    app.config["AWS_SESSION_TOKEN"] = os.getenv("AWS_SESSION_TOKEN")
     app.config["RESUME_BUCKET"] = os.getenv("RESUME_BUCKET")
 
 
