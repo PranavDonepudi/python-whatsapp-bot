@@ -1,16 +1,29 @@
-import logging
-from flask import current_app, jsonify
 import json
-import requests
-from app.services.openai_service import check_if_thread_exists, handle_candidate_reply
-from app.services.openai_service import store_thread  # Import store_thread
-import re
+import logging
 import os
+import re
 import uuid
 from datetime import datetime
 
+import boto3
+import requests
+from flask import current_app, jsonify
+
 # Import or initialize the OpenAI client
-from app.services.openai_service import client
+from app.services.openai_service import store_thread  # Import store_thread
+from app.services.openai_service import (
+    check_if_thread_exists,
+    client,
+    handle_candidate_reply,
+)
+
+# you can omit aws_access_key_id/secret and region_name here)
+s3_client = boto3.client(
+    "s3",
+    aws_access_key_id=current_app.config.get("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=current_app.config.get("AWS_SECRET_ACCESS_KEY"),
+    region_name=current_app.config.get("AWS_REGION", "us-east-2"),
+)
 
 
 def log_http_response(response):
@@ -59,37 +72,51 @@ def send_message(data):
 
 
 # --- WhatsApp Media Download Helper ---
-def download_whatsapp_media(media_id):
+def download_whatsapp_media(media_id, filename=None):
+    """
+    Fetch raw bytes + content-type for a given WhatsApp media_id.
+    Returns: (file_bytes, filename, content_type)
+    """
     headers = {
         "Authorization": f"Bearer {current_app.config['ACCESS_TOKEN']}",
     }
 
-    # Step 1: Get media URL
+    # 1) Get the temporary media download URL
     meta_url = f"https://graph.facebook.com/v18.0/{media_id}"
     meta_res = requests.get(meta_url, headers=headers)
     media_url = meta_res.json().get("url")
 
-    # Step 2: Download media
+    # 2) Download the actual file
     media_res = requests.get(media_url, headers=headers)
-    return media_res.content, media_res.headers.get("Content-Type")
+    content_type = media_res.headers.get("Content-Type")
+    file_bytes = media_res.content
+
+    # Derive a fallback filename if none provided
+    if not filename:
+        ext = content_type.split("/")[-1]
+        filename = f"{media_id}.{ext}"
+
+    return file_bytes, filename, content_type
 
 
 # Helper to save file locally
-def save_file_locally(file_bytes, filename):
-    base_path = os.path.join(os.getcwd(), "resumes")
-    if not os.path.exists(base_path):
-        os.makedirs(base_path)
-
-    # Create unique filename with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+def save_file_to_s3(file_bytes, filename, content_type):
+    """
+    Uploads the given bytes into your S3 bucket under a timestamped key.
+    Returns the public S3 URL.
+    """
+    bucket = current_app.config["RESUME_BUCKET"]  # e.g. "my-company-resumes-2025"
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     safe_filename = f"{timestamp}_{filename}"
-    full_path = os.path.join(base_path, safe_filename)
+    s3_key = f"resumes/{safe_filename}"
 
-    with open(full_path, "wb") as f:
-        f.write(file_bytes)
+    s3_client.put_object(
+        Bucket=bucket, Key=s3_key, Body=file_bytes, ContentType=content_type
+    )
 
-    logging.info(f"Saved file locally at: {full_path}")
-    return full_path
+    s3_url = f"https://{bucket}.s3.amazonaws.com/{s3_key}"
+    logging.info(f"Saved file to S3 at: {s3_url}")
+    return s3_url
 
 
 def process_text_for_whatsapp(text):
@@ -123,11 +150,12 @@ def process_whatsapp_message(body):
     # --- Handle Document Upload ---
     if msg_type == "document":
         media_id = message["document"]["id"]
+        # use provided filename or fall back to a UUID-based one
         filename = message["document"].get("filename", f"{wa_id}_{uuid.uuid4()}.pdf")
 
-        file_bytes, content_type = download_whatsapp_media(media_id)
+        file_bytes, _, content_type = download_whatsapp_media(media_id, filename)
 
-        # Validate file type (allow only PDFs and DOCs)
+        # Validate file type (allow only PDFs and Word docs)
         if content_type not in [
             "application/pdf",
             "application/msword",
@@ -135,7 +163,8 @@ def process_whatsapp_message(body):
         ]:
             reply = "Only PDF or Word document resumes are accepted. Please upload a valid file."
         else:
-            save_file_locally(file_bytes, filename)
+            # upload into S3 and get back the URL if you want
+            s3_url = save_file_to_s3(file_bytes, filename, content_type)
             reply = f"Thanks {name}, we’ve successfully received your resume!"
 
         formatted_msg = process_text_for_whatsapp(reply)
@@ -144,24 +173,28 @@ def process_whatsapp_message(body):
     elif msg_type == "text":
         message_body = message["text"]["body"]
         if not thread_id:
+            # create and store a new thread
             thread = client.beta.threads.create()
             store_thread(wa_id, thread.id)
+
             default_msg = (
-                f"Hi {name}, Congratulations! 🎉 You have been selected for a role at TechnoGen. "
+                f"Hi {name}, congratulations! 🎉 You have been selected for a role at TechnoGen. "
                 "Reply *yes* if you're interested or *update* if you'd like to send a new resume."
             )
             formatted_msg = process_text_for_whatsapp(default_msg)
         else:
-            formatted_msg = process_text_for_whatsapp(
-                handle_candidate_reply(message_body, wa_id, name)
-            )
+            # existing candidate flow
+            response_text = handle_candidate_reply(message_body, wa_id, name)
+            formatted_msg = process_text_for_whatsapp(response_text)
 
+    # --- Unsupported Media ---
     else:
-        formatted_msg = (
+        reply = (
             f"Sorry {name}, we only support text and resume file messages at this time."
         )
-        formatted_msg = process_text_for_whatsapp(formatted_msg)
+        formatted_msg = process_text_for_whatsapp(reply)
 
+    # send back on WhatsApp
     data = get_text_message_input(wa_id, formatted_msg)
     send_message(data)
 

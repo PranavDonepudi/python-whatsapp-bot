@@ -4,3 +4,4 @@ openai
 aiohttp
 requests
 gunicorn
+boto3
