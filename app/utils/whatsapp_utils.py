@@ -97,21 +97,39 @@ def download_whatsapp_media(media_id, filename=None):
 
 # Helper to save file locally
 def save_file_to_s3(file_bytes, filename, content_type):
-    """
-    Upload bytes into S3 under a timestamped key.
-    Must be called with an active Flask app context.
-    """
-    bucket = current_app.config["RESUME_BUCKET"]
+    # 1) Read from app.config
+    aws_key = current_app.config.get("AWS_ACCESS_KEY_ID")
+    aws_secret = current_app.config.get("AWS_SECRET_ACCESS_KEY")
+    aws_region = current_app.config.get("AWS_REGION")
+    bucket = current_app.config.get("RESUME_BUCKET")
+
+    # 2) Log out what you got
+    logging.info("save_file_to_s3(): AWS_ACCESS_KEY_ID=%r", aws_key)
+    logging.info(
+        "save_file_to_s3(): AWS_SECRET_ACCESS_KEY present? %s", bool(aws_secret)
+    )
+    logging.info("save_file_to_s3(): AWS_REGION=%r", aws_region)
+    logging.info("save_file_to_s3(): RESUME_BUCKET=%r", bucket)
+
+    # 3) (Optional) fail early if something's missing
+    if not all([aws_key, aws_secret, aws_region, bucket]):
+        raise RuntimeError(
+            "Missing one of AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, or RESUME_BUCKET"
+        )
+
+    # 4) Create the client and upload
+    s3 = boto3.client(
+        "s3",
+        aws_access_key_id=aws_key,
+        aws_secret_access_key=aws_secret,
+        region_name=aws_region,
+    )
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    safe_filename = f"{timestamp}_{filename}"
-    key = f"resumes/{safe_filename}"
-
-    s3 = _get_s3_client()
+    key = f"resumes/{timestamp}_{filename}"
     s3.put_object(Bucket=bucket, Key=key, Body=file_bytes, ContentType=content_type)
+    logging.info("Uploaded to S3 key: %s/%s", bucket, key)
 
-    url = f"https://{bucket}.s3.amazonaws.com/{key}"
-    logging.info(f"Saved file to S3 at: {url}")
-    return url
+    return f"https://{bucket}.s3.amazonaws.com/{key}"
 
 
 def process_text_for_whatsapp(text):
