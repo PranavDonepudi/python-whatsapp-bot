@@ -110,14 +110,7 @@ def save_file_to_s3(file_bytes, filename, content_type):
     )
     logging.info("save_file_to_s3(): AWS_REGION=%r", aws_region)
     logging.info("save_file_to_s3(): RESUME_BUCKET=%r", bucket)
-
-    # 3) (Optional) fail early if something's missing
-    if not all([aws_key, aws_secret, aws_region, bucket]):
-        raise RuntimeError(
-            "Missing one of AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, or RESUME_BUCKET"
-        )
-
-    # 4) Create the client and upload
+    # 3) Create the client and upload
     s3 = boto3.client(
         "s3",
         aws_access_key_id=aws_key,

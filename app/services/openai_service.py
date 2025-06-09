@@ -1,9 +1,10 @@
-from openai import OpenAI
-import shelve
-from dotenv import load_dotenv
-import os
-import time
 import logging
+import os
+import shelve
+import time
+
+from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
