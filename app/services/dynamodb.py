@@ -2,7 +2,6 @@ import boto3
 import os
 from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
-import pprint
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -44,10 +43,17 @@ def save_thread(wa_id, thread_id):
     )
 
 
-def get_thread(wa_id, thread_id):
+def get_thread(wa_id):
+    """
+    Get the most recent thread (if any) for a given wa_id.
+    Assumes wa_id is the partition key and thread_id is the sort key.
+    """
     table = dynamodb.Table(get_threads_table())
-    response = table.get_item(Key={"wa_id": wa_id, "thread_id": thread_id})
-    return response.get("Item")
+    response = table.query(
+        KeyConditionExpression=Key("wa_id").eq(wa_id), ScanIndexForward=False, Limit=1
+    )
+    items = response.get("Items", [])
+    return items[0] if items else None
 
 
 def save_message(wa_id, message_id, body, msg_type):

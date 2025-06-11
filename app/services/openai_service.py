@@ -3,6 +3,12 @@ import os
 import shelve
 import time
 
+from app.services.dynamodb import (
+    save_thread,
+    get_thread,
+    save_message,
+    get_recent_messages,
+)
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -21,7 +27,7 @@ def create_assistant():
         name="WhatsApp Recruitment Assistant",
         instructions="You are a friendly and professional assistant for TechnoGen, an IT consulting company. "
         "Your task is to inform job candidates when they are selected for roles, provide helpful follow-up, "
-        "and guide them on next steps (e.g., submitting updated resumes, scheduling interviews, etc). "
+        "and guide them on next steps (e.g., submitting updated resumes,asking information about a position from candidates etc). "
         "If a candidate responds with queries, answer based on typical recruitment scenarios. "
         "If unsure, suggest they reach out to the TechnoGen team.",
         tools=[{"type": "retrieval"}],
@@ -32,13 +38,12 @@ def create_assistant():
 
 # Use context manager to ensure the shelf file is closed properly
 def check_if_thread_exists(wa_id):
-    with shelve.open("threads_db") as threads_shelf:
-        return threads_shelf.get(wa_id, None)
+    item = get_thread(wa_id)
+    return item["thread_id"] if item else None
 
 
 def store_thread(wa_id, thread_id):
-    with shelve.open("threads_db", writeback=True) as threads_shelf:
-        threads_shelf[wa_id] = thread_id
+    save_thread(wa_id, thread_id)
 
 
 def run_assistant(thread, name):
@@ -86,35 +91,47 @@ def handle_candidate_reply(message, wa_id, name):
 
 
 def generate_response(message_body, wa_id, name):
-    # Check if there is already a thread_id for the wa_id
+    # Get or create thread
     thread_id = check_if_thread_exists(wa_id)
-
-    # If a thread doesn't exist, create one and store it
-    if thread_id is None:
+    if not thread_id:
         logging.info("Creating new thread for %s with wa_id %s", name, wa_id)
         thread = client.beta.threads.create()
-        store_thread(wa_id, thread.id)
         thread_id = thread.id
-
-    # Otherwise, retrieve the existing thread
+        store_thread(wa_id, thread_id)
     else:
         logging.info("Retrieving existing thread for %s with wa_id %s", name, wa_id)
         thread = client.beta.threads.retrieve(thread_id)
 
-    # Add message to thread
-    personalized_prompt = (
-        f"The candidate's name is {name}. Respond to the following message as TechnoGen's recruitment bot. "
-        "Do not include a signature, closing line, or mention 'Regards' or 'Your Name'. "
-        "Just answer naturally and keep it short unless detailed information is needed. "
-        f"Here is the message: {message_body} "
+    # Add current message to context
+    context_messages = get_recent_messages(wa_id, limit=10)
+    context_str = "\n".join(
+        [
+            f"{m['message_type'].capitalize()}: {m['message_body']}"
+            for m in reversed(context_messages)
+        ]
     )
+
+    personalized_prompt = (
+        f"The candidate's name is {name}. This is a WhatsApp chat. "
+        "Below are the last few messages exchanged. Use them for context. "
+        "Do not include greetings, closing lines, or signatures.\n\n"
+        f"{context_str}\n\n"
+        f"Latest message: {message_body}"
+    )
+
+    # Save user message
+    save_message(wa_id, f"msg-{int(time.time())}", message_body, "user")
+
+    # Add message to OpenAI thread
     client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
         content=personalized_prompt,
     )
 
-    # Run the assistant and get the new message
     new_message = run_assistant(thread, name)
+
+    # Save assistant response to message history
+    save_message(wa_id, f"msg-{int(time.time()) + 1}", new_message, "assistant")
 
     return new_message
