@@ -21,6 +21,9 @@ def load_configurations(app):
     app.config["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
     app.config["AWS_REGION"] = os.getenv("AWS_REGION", "us-east-1")
     app.config["AWS_SESSION_TOKEN"] = os.getenv("AWS_SESSION_TOKEN")
+    app.config["AWS_REGION"] = os.getenv("AWS_REGION", "us-east-2")
+    app.config["THREADS_TABLE"] = os.getenv("THREADS_TABLE", "WhatsAppThreads")
+    app.config["MESSAGES_TABLE"] = os.getenv("MESSAGES_TABLE", "WhatsAppMessages")
     app.config["RESUME_BUCKET"] = os.getenv("RESUME_BUCKET")
 
 
