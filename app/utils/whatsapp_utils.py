@@ -7,15 +7,10 @@ from datetime import datetime
 import boto3
 import requests
 from flask import current_app, jsonify
-from app.tasks.tasks import process_whatsapp_text_async
 
 # Import or initialize the OpenAI client
 from app.services.openai_service import store_thread  # Import store_thread
-from app.services.openai_service import (
-    check_if_thread_exists,
-    client,
-    handle_candidate_reply,
-)
+from app.services.openai_service import check_if_thread_exists, client
 
 
 def log_http_response(response):
@@ -176,6 +171,8 @@ def process_whatsapp_message(body):
 
     # --- 2) Text messages go through Celery ---
     elif msg_type == "text":
+        from app.tasks.tasks import process_whatsapp_text_async
+
         text_body = message["text"]["body"]
 
         # 2a) First‐time greeting
