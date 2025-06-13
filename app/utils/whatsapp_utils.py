@@ -7,6 +7,7 @@ from datetime import datetime
 import boto3
 import requests
 from flask import current_app, jsonify
+from app.tasks.tasks import process_whatsapp_text_async
 
 # Import or initialize the OpenAI client
 from app.services.openai_service import store_thread  # Import store_thread
@@ -152,15 +153,13 @@ def process_whatsapp_message(body):
     # Check if this is a new candidate or first message
     thread_id = check_if_thread_exists(wa_id)
 
-    # --- Handle Document Upload ---
+    # --- 1) Document Uploads stay synchronous ---
     if msg_type == "document":
         media_id = message["document"]["id"]
-        # use provided filename or fall back to a UUID-based one
         filename = message["document"].get("filename", f"{wa_id}_{uuid.uuid4()}.pdf")
 
         file_bytes, _, content_type = download_whatsapp_media(media_id, filename)
 
-        # Validate file type (allow only PDFs and Word docs)
         if content_type not in [
             "application/pdf",
             "application/msword",
@@ -168,17 +167,20 @@ def process_whatsapp_message(body):
         ]:
             reply = "Only PDF or Word document resumes are accepted. Please upload a valid file."
         else:
-            # upload into S3 and get back the URL if you want
             s3_url = save_file_to_s3(file_bytes, filename, content_type)
             reply = f"Thanks {name}, we’ve successfully received your resume!"
 
         formatted_msg = process_text_for_whatsapp(reply)
+        data = get_text_message_input(wa_id, formatted_msg)
+        return send_message(data)
 
-    # --- Handle Text Message ---
+    # --- 2) Text messages go through Celery ---
     elif msg_type == "text":
-        message_body = message["text"]["body"]
+        text_body = message["text"]["body"]
+
+        # 2a) First‐time greeting
         if not thread_id:
-            # create and store a new thread
+            # create & store thread
             thread = client.beta.threads.create()
             store_thread(wa_id, thread.id)
 
@@ -187,22 +189,22 @@ def process_whatsapp_message(body):
                 "I'm here to assist you with any questions you may have about our job openings. "
                 "Feel free to ask me anything related to our job opportunities or the application process."
             )
-            formatted_msg = process_text_for_whatsapp(default_msg)
-        else:
-            # existing candidate flow
-            response_text = handle_candidate_reply(message_body, wa_id, name)
-            formatted_msg = process_text_for_whatsapp(response_text)
+            welcome = process_text_for_whatsapp(default_msg)
+            send_message(get_text_message_input(wa_id, welcome))
 
-    # --- Unsupported Media ---
+        # 2b) Always enqueue a background task to handle candidate reply
+        process_whatsapp_text_async.delay(wa_id, name, text_body)
+        # return early since the async task will send the actual response
+        return
+
+    # --- 3) Unsupported media types ---
     else:
         reply = (
             f"Sorry {name}, we only support text and resume file messages at this time."
         )
         formatted_msg = process_text_for_whatsapp(reply)
-
-    # send back on WhatsApp
-    data = get_text_message_input(wa_id, formatted_msg)
-    send_message(data)
+        data = get_text_message_input(wa_id, formatted_msg)
+        return send_message(data)
 
 
 def is_valid_whatsapp_message(body):

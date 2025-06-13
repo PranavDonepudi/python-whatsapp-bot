@@ -5,3 +5,4 @@ aiohttp
 requests
 gunicorn
 boto3
+celery
