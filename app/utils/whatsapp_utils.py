@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import re
 import uuid
 from datetime import datetime
@@ -184,8 +183,9 @@ def process_whatsapp_message(body):
             store_thread(wa_id, thread.id)
 
             default_msg = (
-                f"Hi {name}, congratulations! 🎉 You have been selected for a role at TechnoGen. "
-                "Reply *yes* if you're interested or *update* if you'd like to send a new resume."
+                f"Hi {name}, this is WhatsApp bot assistant for TechnoGen. "
+                "I'm here to assist you with any questions you may have about our job openings. "
+                "Feel free to ask me anything related to our job opportunities or the application process."
             )
             formatted_msg = process_text_for_whatsapp(default_msg)
         else:

@@ -1,6 +1,5 @@
 import logging
 import os
-import shelve
 import time
 
 from app.services.dynamodb import (
@@ -26,10 +25,11 @@ def create_assistant():
     assistant = client.beta.assistants.create(
         name="WhatsApp Recruitment Assistant",
         instructions="You are a friendly and professional assistant for TechnoGen, an IT consulting company. "
-        "Your task is to inform job candidates when they are selected for roles, provide helpful follow-up, "
-        "and guide them on next steps (e.g., submitting updated resumes,asking information about a position from candidates etc). "
+        "Your task is to explain job candidates about an available job position "
+        "Also help them update their resumes and answer any questions they may have."
+        "Use professional language and be warm in your responses. "
         "If a candidate responds with queries, answer based on typical recruitment scenarios. "
-        "If unsure, suggest they reach out to the TechnoGen team.",
+        "If unsure, suggest they reach out to the TechnoGen team(contact@technogeninc.com).",
         tools=[{"type": "retrieval"}],
         model="gpt-4-1106-preview",
     )
@@ -77,16 +77,12 @@ def handle_candidate_reply(message, wa_id, name):
 
     if "update" in message_lower:
         response = "Sure! Please upload your updated resume and our team will review it shortly."
-    elif "yes" in message_lower:
-        # You can modify this prompt if needed
-        response = generate_response(
-            "The candidate agreed to proceed. What should we say next?", wa_id, name
-        )
-    elif "no" in message_lower:
-        response = "No problem. Let us know if you would like to be considered for future opportunities!"
     else:
-        response = generate_response(message, wa_id, name)
-
+        response = generate_response(
+            "Candidate has replied with {message}. Process the reply and respond accordingly.",
+            wa_id,
+            name,
+        )
     return response
 
 
