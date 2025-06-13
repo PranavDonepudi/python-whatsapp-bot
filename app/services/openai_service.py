@@ -79,7 +79,7 @@ def handle_candidate_reply(message, wa_id, name):
         response = "Sure! Please upload your updated resume and our team will review it shortly."
     else:
         response = generate_response(
-            "Candidate has replied with {message}. Process the reply and respond accordingly.",
+            f"Candidate has replied with '{message}'. Process the reply and respond accordingly.",
             wa_id,
             name,
         )
