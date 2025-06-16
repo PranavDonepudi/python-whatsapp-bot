@@ -17,7 +17,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-with open("data/Job Decription.pdf", "r", encoding="utf-8") as f:
+with open("data/JD.txt", "r", encoding="utf-8") as f:
     data = f.read()
 
 
