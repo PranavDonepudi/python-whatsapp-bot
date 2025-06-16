@@ -1,16 +1,12 @@
+import os
 import json
 import logging
 import re
 import uuid
 from datetime import datetime
-import os
+
 import boto3
 import requests
-from flask import current_app, jsonify
-
-# Import or initialize the OpenAI client
-from app.services.openai_service import store_thread  # Import store_thread
-from app.services.openai_service import check_if_thread_exists, client
 
 # ————————
 # Configuration via environment variables
@@ -25,73 +21,86 @@ AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 RESUME_BUCKET = os.getenv("RESUME_BUCKET")
 
 
-def log_http_response(response):
+def log_http_response(response: requests.Response) -> None:
+    """
+    Log status code, content type, and body of an HTTP response.
+    """
     logging.info("Status: %s", response.status_code)
     logging.info("Content-type: %s", response.headers.get("content-type"))
     logging.info("Body: %s", response.text)
 
 
-def get_text_message_input(recipient, text):
-    return json.dumps(
-        {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": recipient,
-            "type": "text",
-            "text": {"preview_url": False, "body": text},
-        }
-    )
-
-
-def send_message(data):
-    headers = {
-        "Content-type": "application/json",
-        "Authorization": f"Bearer {current_app.config['ACCESS_TOKEN']}",
+def get_text_message_input(recipient: str, text: str) -> dict:
+    """
+    Construct the payload for sending a WhatsApp text message.
+    """
+    return {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": recipient,
+        "type": "text",
+        "text": {"preview_url": False, "body": text},
     }
 
-    url = f"https://graph.facebook.com/{current_app.config['VERSION']}/{current_app.config['PHONE_NUMBER_ID']}/messages"
+
+def send_message(payload: dict) -> requests.Response:
+    """
+    Send a WhatsApp message via the Meta Graph API.
+    `payload` should be a dict; this function will JSON-encode it.
+    """
+    if not ACCESS_TOKEN or not PHONE_NUMBER_ID:
+        raise RuntimeError("WhatsApp ACCESS_TOKEN or PHONE_NUMBER_ID is not set")
+
+    url = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+    }
 
     try:
-        response = requests.post(
-            url, data=data, headers=headers, timeout=10
-        )  # 10 seconds timeout as an example
-        response.raise_for_status()  # Raises an HTTPError if the HTTP request returned an unsuccessful status code
-    except requests.Timeout:
-        logging.error("Timeout occurred while sending message")
-        return jsonify({"status": "error", "message": "Request timed out"}), 408
-    except (
-        requests.RequestException
-    ) as e:  # This will catch any general request exception
-        logging.error("Request failed due to: %s", e)
-        return jsonify({"status": "error", "message": "Failed to send message"}), 500
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        response.raise_for_status()
+    except requests.Timeout as e:
+        logging.error("Timeout occurred while sending message: %s", e)
+        raise
+    except requests.RequestException as e:
+        logging.error("Failed to send message: %s", e)
+        raise
     else:
-        # Process the response as normal
         log_http_response(response)
         return response
 
 
 def _get_s3_client():
-    """Create an S3 client _inside_ an app context."""
+    """
+    Create a boto3 S3 client using environment credentials.
+    """
+    if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+        raise RuntimeError("AWS credentials are not set in environment")
+
     return boto3.client(
         "s3",
-        aws_access_key_id=current_app.config["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=current_app.config["AWS_SECRET_ACCESS_KEY"],
-        region_name=current_app.config.get("AWS_REGION", "us-east-1"),
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        region_name=AWS_REGION,
     )
 
 
-# --- WhatsApp Media Download Helper ---
-def download_whatsapp_media(media_id, filename=None):
-    headers = {
-        "Authorization": f"Bearer {current_app.config['ACCESS_TOKEN']}",
-    }
-    # 1) fetch the media URL
-    meta_url = f"https://graph.facebook.com/v18.0/{media_id}"
-    meta_res = requests.get(meta_url, headers=headers)
+def download_whatsapp_media(media_id: str, filename: str = None):
+    """
+    1) Fetch the media URL from Graph API metadata.
+    2) Download the bytes and return (bytes, filename, content_type).
+    """
+    meta_url = f"https://graph.facebook.com/{VERSION}/{media_id}"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+
+    meta_res = requests.get(meta_url, headers=headers, timeout=5)
+    meta_res.raise_for_status()
     media_url = meta_res.json().get("url")
 
-    # 2) download the bytes
-    media_res = requests.get(media_url, headers=headers)
+    media_res = requests.get(media_url, headers=headers, timeout=10)
+    media_res.raise_for_status()
+
     content_type = media_res.headers.get("Content-Type")
     file_bytes = media_res.content
 
@@ -102,129 +111,101 @@ def download_whatsapp_media(media_id, filename=None):
     return file_bytes, filename, content_type
 
 
-# Helper to save file locally
-def save_file_to_s3(file_bytes, filename, content_type):
-    # 1) Read from app.config
-    aws_key = current_app.config.get("AWS_ACCESS_KEY_ID")
-    aws_secret = current_app.config.get("AWS_SECRET_ACCESS_KEY")
-    aws_region = current_app.config.get("AWS_REGION")
-    bucket = current_app.config.get("RESUME_BUCKET")
+def save_file_to_s3(file_bytes: bytes, filename: str, content_type: str) -> str:
+    """
+    Upload bytes to S3 under RESUME_BUCKET, return public URL.
+    """
+    if not RESUME_BUCKET:
+        raise RuntimeError("RESUME_BUCKET is not set in environment")
 
-    # 2) Log out what you got
-    logging.info("save_file_to_s3(): AWS_ACCESS_KEY_ID=%r", aws_key)
-    logging.info(
-        "save_file_to_s3(): AWS_SECRET_ACCESS_KEY present? %s", bool(aws_secret)
-    )
-    logging.info("save_file_to_s3(): AWS_REGION=%r", aws_region)
-    logging.info("save_file_to_s3(): RESUME_BUCKET=%r", bucket)
-    # 3) Create the client and upload
-    s3 = boto3.client(
-        "s3",
-        aws_access_key_id=aws_key,
-        aws_secret_access_key=aws_secret,
-        region_name=aws_region,
-    )
+    client = _get_s3_client()
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     key = f"resumes/{timestamp}_{filename}"
-    s3.put_object(Bucket=bucket, Key=key, Body=file_bytes, ContentType=content_type)
-    logging.info("Uploaded to S3 key: %s/%s", bucket, key)
 
-    return f"https://{bucket}.s3.amazonaws.com/{key}"
-
-
-def process_text_for_whatsapp(text):
-    # Remove brackets
-    pattern = r"\【.*?\】"
-    # Substitute the pattern with an empty string
-    text = re.sub(pattern, "", text).strip()
-
-    # Pattern to find double asterisks including the word(s) in between
-    pattern = r"\*\*(.*?)\*\*"
-
-    # Replacement pattern with single asterisks
-    replacement = r"*\1*"
-
-    # Substitute occurrences of the pattern with the replacement
-    whatsapp_style_text = re.sub(pattern, replacement, text)
-
-    return whatsapp_style_text
+    client.put_object(
+        Bucket=RESUME_BUCKET,
+        Key=key,
+        Body=file_bytes,
+        ContentType=content_type,
+    )
+    logging.info("Uploaded to S3 key: %s/%s", RESUME_BUCKET, key)
+    return f"https://{RESUME_BUCKET}.s3.amazonaws.com/{key}"
 
 
-def process_whatsapp_message(body):
+def process_text_for_whatsapp(text: str) -> str:
+    """
+    Strip bracketed annotations and convert **bold** to *italic* for WhatsApp.
+    """
+    text = re.sub(r"\【.*?\】", "", text).strip()
+    return re.sub(r"\*\*(.*?)\*\*", r"*\1*", text)
+
+
+def process_whatsapp_message(body: dict):
+    """
+    Dispatch incoming webhook payload. Returns a Response for sync flows or None.
+    """
     value = body["entry"][0]["changes"][0]["value"]
     wa_id = value["contacts"][0]["wa_id"]
     name = value["contacts"][0]["profile"]["name"]
     message = value["messages"][0]
     msg_type = message["type"]
 
-    # Check if this is a new candidate or first message
+    # Delay import to avoid circulars
+    from app.services.openai_service import check_if_thread_exists, client, store_thread
+    from app.tasks.tasks import process_whatsapp_text_async
+
     thread_id = check_if_thread_exists(wa_id)
 
-    # --- 1) Document Uploads stay synchronous ---
     if msg_type == "document":
         media_id = message["document"]["id"]
         filename = message["document"].get("filename", f"{wa_id}_{uuid.uuid4()}.pdf")
 
         file_bytes, _, content_type = download_whatsapp_media(media_id, filename)
-
-        if content_type not in [
+        if content_type not in (
             "application/pdf",
             "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ]:
-            reply = "Only PDF or Word document resumes are accepted. Please upload a valid file."
+        ):
+            reply = "Only PDF or Word documents accepted. Please upload your resume."
         else:
             s3_url = save_file_to_s3(file_bytes, filename, content_type)
-            reply = f"Thanks {name}, we’ve successfully received your resume!"
+            reply = f"Thanks {name}, we got your resume: {s3_url}"
 
-        formatted_msg = process_text_for_whatsapp(reply)
-        data = get_text_message_input(wa_id, formatted_msg)
+        data = get_text_message_input(wa_id, process_text_for_whatsapp(reply))
         return send_message(data)
 
-    # --- 2) Text messages go through Celery ---
-    elif msg_type == "text":
-        from app.tasks.tasks import process_whatsapp_text_async
-
+    if msg_type == "text":
         text_body = message["text"]["body"]
 
-        # 2a) First‐time greeting
         if not thread_id:
-            # create & store thread
             thread = client.beta.threads.create()
             store_thread(wa_id, thread.id)
 
-            default_msg = (
-                f"Hi {name}, this is WhatsApp bot assistant for TechnoGen. "
-                "I'm here to assist you with any questions you may have about our job openings. "
-                "Feel free to ask me anything related to our job opportunities or the application process."
+            welcome = (
+                f"Hi {name}, welcome to TechnoGen’s job bot! "
+                "Ask me anything about our openings or application process."
             )
-            welcome = process_text_for_whatsapp(default_msg)
-            send_message(get_text_message_input(wa_id, welcome))
+            send_message(
+                get_text_message_input(wa_id, process_text_for_whatsapp(welcome))
+            )
 
-        # 2b) Always enqueue a background task to handle candidate reply
         process_whatsapp_text_async.delay(wa_id, name, text_body)
-        # return early since the async task will send the actual response
-        return
+        return None
 
-    # --- 3) Unsupported media types ---
-    else:
-        reply = (
-            f"Sorry {name}, we only support text and resume file messages at this time."
-        )
-        formatted_msg = process_text_for_whatsapp(reply)
-        data = get_text_message_input(wa_id, formatted_msg)
-        return send_message(data)
-
-
-def is_valid_whatsapp_message(body):
-    """
-    Check if the incoming webhook event has a valid WhatsApp message structure.
-    """
-    return (
-        body.get("object")
-        and body.get("entry")
-        and body["entry"][0].get("changes")
-        and body["entry"][0]["changes"][0].get("value")
-        and body["entry"][0]["changes"][0]["value"].get("messages")
-        and body["entry"][0]["changes"][0]["value"]["messages"][0]
+    fallback = (
+        f"Sorry {name}, I only handle text messages and resume uploads right now."
     )
+    return send_message(
+        get_text_message_input(wa_id, process_text_for_whatsapp(fallback))
+    )
+
+
+def is_valid_whatsapp_message(body: dict) -> bool:
+    """
+    Check if payload contains a valid WhatsApp message structure.
+    """
+    try:
+        value = body["entry"][0]["changes"][0]["value"]
+        return bool(value.get("messages"))
+    except (IndexError, KeyError):
+        return False
