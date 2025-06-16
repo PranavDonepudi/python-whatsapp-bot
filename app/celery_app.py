@@ -1,12 +1,13 @@
-# celery_app.py
 import os
 from celery import Celery
 
 celery_app = Celery(
     "whatsapp_tasks",
     broker=os.getenv("CELERY_BROKER_URL"),
+    include=["app.tasks.tasks"],
 )
 
+celery_app.autodiscover_tasks(["app"])
 # Tell Celery we’re using JSON (recommended) and set a default queue name
 celery_app.conf.update(
     accept_content=["json"],
