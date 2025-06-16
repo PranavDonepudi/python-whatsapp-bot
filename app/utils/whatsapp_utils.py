@@ -3,7 +3,7 @@ import logging
 import re
 import uuid
 from datetime import datetime
-
+import os
 import boto3
 import requests
 from flask import current_app, jsonify
@@ -11,6 +11,18 @@ from flask import current_app, jsonify
 # Import or initialize the OpenAI client
 from app.services.openai_service import store_thread  # Import store_thread
 from app.services.openai_service import check_if_thread_exists, client
+
+# ————————
+# Configuration via environment variables
+# ————————
+ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
+VERSION = os.getenv("VERSION", "v18.0")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+RESUME_BUCKET = os.getenv("RESUME_BUCKET")
 
 
 def log_http_response(response):
