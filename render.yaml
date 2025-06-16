@@ -2,8 +2,8 @@
 services:
   # Your existing Flask web service
   - type: web
-    name: whatsapp-flask-bot
-    env: python
+    name: python-whatsapp-bot
+    runtime: python
     region: oregon                    # or your desired region
     branch: main
     buildCommand: pip install -r requirements.txt
@@ -12,7 +12,7 @@ services:
   # New Celery worker service
   - type: worker
     name: whatsapp-celery-bot
-    env: python
+    runtime: python
     region: oregon
     branch: main
     buildCommand: pip install -r requirements.txt
