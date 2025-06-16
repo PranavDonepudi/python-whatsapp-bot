@@ -1,8 +1,22 @@
 # render.yaml
 services:
+  # Your existing Flask web service
   - type: web
     name: whatsapp-flask-bot
     env: python
-    buildCommand: ""
-    startCommand: gunicorn run:app
-    plan: free
+    region: oregon                    # or your desired region
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app   # or however you start Flask
+
+  # New Celery worker service
+  - type: worker
+    name: whatsapp-celery-bot
+    env: python
+    region: oregon
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.celery_app worker \
+                      --loglevel=INFO \
+                      --concurrency=1 \
+                      --pool=solo

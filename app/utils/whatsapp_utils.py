@@ -36,10 +36,9 @@ def get_text_message_input(recipient: str, text: str) -> dict:
     """
     return {
         "messaging_product": "whatsapp",
-        "recipient_type": "individual",
         "to": recipient,
         "type": "text",
-        "text": {"preview_url": False, "body": text},
+        "text": {"body": text, "preview_url": False},
     }
 
 
@@ -56,19 +55,9 @@ def send_message(payload: dict) -> requests.Response:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {ACCESS_TOKEN}",
     }
-
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
-        response.raise_for_status()
-    except requests.Timeout as e:
-        logging.error("Timeout occurred while sending message: %s", e)
-        raise
-    except requests.RequestException as e:
-        logging.error("Failed to send message: %s", e)
-        raise
-    else:
-        log_http_response(response)
-        return response
+    response = requests.post(url, json=payload, headers=headers, timeout=10)
+    log_http_response(response)
+    return response
 
 
 def _get_s3_client():
@@ -150,7 +139,6 @@ def process_whatsapp_message(body: dict):
     message = value["messages"][0]
     msg_type = message["type"]
 
-    # Delay import to avoid circulars
     from app.services.openai_service import check_if_thread_exists, client, store_thread
     from app.tasks.tasks import process_whatsapp_text_async
 
@@ -168,8 +156,7 @@ def process_whatsapp_message(body: dict):
         ):
             reply = "Only PDF or Word documents accepted. Please upload your resume."
         else:
-            s3_url = save_file_to_s3(file_bytes, filename, content_type)
-            reply = f"Thanks {name}, we got your resume: {s3_url}"
+            reply = f"Thanks {name}, we got your resume updated. I'm happy to help you further on any questions."
 
         data = get_text_message_input(wa_id, process_text_for_whatsapp(reply))
         return send_message(data)
@@ -182,7 +169,7 @@ def process_whatsapp_message(body: dict):
             store_thread(wa_id, thread.id)
 
             welcome = (
-                f"Hi {name}, welcome to TechnoGen’s job bot! "
+                f"Hi {name}, welcome to TechnoGen's job bot! "
                 "Ask me anything about our openings or application process."
             )
             send_message(
