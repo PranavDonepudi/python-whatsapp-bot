@@ -170,6 +170,7 @@ def process_whatsapp_message(body: dict):
 
             welcome = (
                 f"Hi {name}, welcome to TechnoGen's job bot! "
+                "If you want to update your resume, please upload it as a document. "
                 "Ask me anything about our openings or application process."
             )
             send_message(

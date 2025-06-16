@@ -1,0 +1,257 @@
+﻿Technogen - IT Job Descriptions
+1. Senior Software Developer
+Department: Engineering
+Reports to: Engineering Manager
+Employment Type: Full-time
+Experience Level: 5+ years
+Job Summary
+We are seeking a skilled Senior Software Developer to join our dynamic development team. The successful candidate will be responsible for designing, developing, and maintaining high-quality software solutions while mentoring junior developers and contributing to technical decision-making.
+Key Responsibilities
+* Design and develop scalable web applications using modern programming languages and frameworks
+* Write clean, maintainable, and well-documented code following best practices
+* Participate in code reviews and provide constructive feedback to team members
+* Collaborate with cross-functional teams including product managers, designers, and QA engineers
+* Mentor junior developers and contribute to their professional growth
+* Troubleshoot and resolve complex technical issues
+* Stay updated with emerging technologies and industry trends
+* Contribute to technical documentation and system architecture decisions
+Required Qualifications
+* Bachelor's degree in Computer Science, Software Engineering, or related field
+* 5+ years of experience in software development
+* Proficiency in at least two programming languages (Java, Python, C#, JavaScript, etc.)
+* Strong experience with web frameworks (React, Angular, Vue.js, Spring, .NET, etc.)
+* Solid understanding of database design and SQL
+* Experience with version control systems (Git)
+* Knowledge of software development methodologies (Agile, Scrum)
+* Strong problem-solving and analytical skills
+* Excellent communication and teamwork abilities
+Preferred Qualifications
+* Master's degree in Computer Science or related field
+* Experience with cloud platforms (AWS, Azure, Google Cloud)
+* Knowledge of DevOps practices and CI/CD pipelines
+* Experience with microservices architecture
+* Familiarity with containerization technologies (Docker, Kubernetes)
+Benefits
+* Competitive salary and performance bonuses
+* Comprehensive health insurance
+* Professional development opportunities
+* Flexible work arrangements
+* Modern office environment with latest technology
+________________
+
+
+2. DevOps Engineer
+Department: Infrastructure
+Reports to: Infrastructure Manager
+Employment Type: Full-time
+Experience Level: 3+ years
+Job Summary
+Technogen is looking for a DevOps Engineer to streamline our development and deployment processes. You will work closely with development and operations teams to implement automation, improve system reliability, and enhance our CI/CD pipelines.
+Key Responsibilities
+* Design and implement CI/CD pipelines for automated testing and deployment
+* Manage and maintain cloud infrastructure (AWS, Azure, or Google Cloud)
+* Configure and manage containerization using Docker and Kubernetes
+* Monitor system performance and implement proactive maintenance procedures
+* Automate infrastructure provisioning using Infrastructure as Code (IaC) tools
+* Collaborate with development teams to optimize application deployment
+* Implement security best practices across all environments
+* Troubleshoot production issues and implement solutions
+* Create and maintain technical documentation for infrastructure and processes
+Required Qualifications
+* Bachelor's degree in Computer Science, Engineering, or related field
+* 3+ years of experience in DevOps, System Administration, or related role
+* Strong experience with cloud platforms (AWS, Azure, or Google Cloud)
+* Proficiency in scripting languages (Python, Bash, PowerShell)
+* Experience with containerization technologies (Docker, Kubernetes)
+* Knowledge of CI/CD tools (Jenkins, GitLab CI, Azure DevOps)
+* Understanding of Infrastructure as Code tools (Terraform, Ansible, CloudFormation)
+* Experience with monitoring and logging tools (Prometheus, Grafana, ELK stack)
+* Strong understanding of Linux/Unix systems
+Preferred Qualifications
+* Cloud certifications (AWS, Azure, or Google Cloud)
+* Experience with configuration management tools
+* Knowledge of security best practices and compliance requirements
+* Experience with database administration
+* Understanding of networking concepts and protocols
+________________
+
+
+3. Cybersecurity Analyst
+Department: Security
+Reports to: Security Manager
+Employment Type: Full-time
+Experience Level: 2+ years
+Job Summary
+Join our security team as a Cybersecurity Analyst to protect Technogen's digital assets and ensure the security of our systems and data. You will be responsible for monitoring security threats, implementing security measures, and responding to security incidents.
+Key Responsibilities
+* Monitor security events and alerts using SIEM tools
+* Conduct vulnerability assessments and penetration testing
+* Investigate and respond to security incidents and breaches
+* Implement and maintain security policies and procedures
+* Perform risk assessments and security audits
+* Collaborate with IT teams to ensure security best practices
+* Stay updated with latest security threats and vulnerabilities
+* Provide security awareness training to employees
+* Maintain security documentation and incident reports
+Required Qualifications
+* Bachelor's degree in Cybersecurity, Information Technology, or related field
+* 2+ years of experience in cybersecurity or information security
+* Knowledge of security frameworks (NIST, ISO 27001, CIS Controls)
+* Experience with security tools (SIEM, vulnerability scanners, firewalls)
+* Understanding of network security protocols and technologies
+* Knowledge of incident response procedures
+* Strong analytical and problem-solving skills
+* Excellent written and verbal communication skills
+Preferred Qualifications
+* Security certifications (CISSP, CISM, CompTIA Security+, CEH)
+* Experience with cloud security (AWS, Azure, Google Cloud)
+* Knowledge of compliance requirements (GDPR, HIPAA, SOX)
+* Experience with forensic analysis tools
+* Understanding of malware analysis and reverse engineering
+________________
+
+
+4. Data Scientist
+Department: Analytics
+Reports to: Data Science Manager
+Employment Type: Full-time
+Experience Level: 3+ years
+Job Summary
+We are seeking a talented Data Scientist to join our analytics team. You will work with large datasets to extract insights, build predictive models, and support data-driven decision making across the organization.
+Key Responsibilities
+* Analyze complex datasets to identify trends, patterns, and insights
+* Develop and implement machine learning models and algorithms
+* Create data visualizations and dashboards for stakeholders
+* Collaborate with business teams to understand requirements and deliver solutions
+* Clean, preprocess, and validate data for analysis
+* Design and conduct A/B tests and experiments
+* Present findings and recommendations to leadership and stakeholders
+* Stay current with data science techniques and tools
+* Mentor junior data analysts and contribute to best practices
+Required Qualifications
+* Master's degree in Data Science, Statistics, Mathematics, or related field
+* 3+ years of experience in data science or analytics
+* Proficiency in programming languages (Python, R, SQL)
+* Experience with machine learning libraries (scikit-learn, TensorFlow, PyTorch)
+* Strong statistical analysis and modeling skills
+* Experience with data visualization tools (Tableau, Power BI, matplotlib, seaborn)
+* Knowledge of big data technologies (Hadoop, Spark, etc.)
+* Excellent analytical and problem-solving abilities
+Preferred Qualifications
+* PhD in a quantitative field
+* Experience with cloud-based data platforms
+* Knowledge of deep learning and neural networks
+* Experience with natural language processing or computer vision
+* Industry-specific domain knowledge
+________________
+
+
+5. UI/UX Designer
+Department: Design
+Reports to: Design Manager
+Employment Type: Full-time
+Experience Level: 3+ years
+Job Summary
+Technogen is seeking a creative UI/UX Designer to create intuitive and engaging user experiences for our digital products. You will work closely with product managers and developers to design user-centered solutions that meet both user needs and business objectives.
+Key Responsibilities
+* Conduct user research and usability testing to understand user needs
+* Create wireframes, prototypes, and high-fidelity designs
+* Design user interfaces for web and mobile applications
+* Develop and maintain design systems and style guides
+* Collaborate with development teams to ensure design implementation
+* Iterate on designs based on user feedback and testing results
+* Present design concepts and rationale to stakeholders
+* Stay updated with design trends and best practices
+* Contribute to the overall user experience strategy
+Required Qualifications
+* Bachelor's degree in Design, Human-Computer Interaction, or related field
+* 3+ years of experience in UI/UX design
+* Proficiency in design tools (Figma, Sketch, Adobe Creative Suite)
+* Strong portfolio demonstrating design process and outcomes
+* Understanding of user-centered design principles
+* Experience with responsive and mobile-first design
+* Knowledge of accessibility standards and guidelines
+* Excellent visual design and typography skills
+* Strong communication and presentation abilities
+Preferred Qualifications
+* Experience with prototyping tools (InVision, Principle, Framer)
+* Knowledge of front-end development (HTML, CSS, JavaScript)
+* Experience with design systems and component libraries
+* Understanding of agile development processes
+* Background in user research methodologies
+________________
+
+
+6. Network Administrator
+Department: IT Operations
+Reports to: IT Manager
+Employment Type: Full-time
+Experience Level: 2+ years
+Job Summary
+We are looking for a Network Administrator to maintain and optimize our network infrastructure. You will be responsible for ensuring network reliability, security, and performance while supporting our growing business needs.
+Key Responsibilities
+* Configure and maintain network equipment (routers, switches, firewalls)
+* Monitor network performance and troubleshoot connectivity issues
+* Implement network security measures and access controls
+* Manage wireless networks and VPN connections
+* Perform regular network maintenance and updates
+* Document network configurations and procedures
+* Collaborate with security team on network security initiatives
+* Support end-users with network-related issues
+* Plan and implement network upgrades and expansions
+Required Qualifications
+* Bachelor's degree in Information Technology, Computer Science, or related field
+* 2+ years of experience in network administration
+* Strong knowledge of networking protocols (TCP/IP, DNS, DHCP, VLANs)
+* Experience with network equipment from major vendors (Cisco, Juniper, etc.)
+* Understanding of network security principles and practices
+* Knowledge of wireless networking technologies
+* Experience with network monitoring and diagnostic tools
+* Strong troubleshooting and problem-solving skills
+Preferred Qualifications
+* Network certifications (CCNA, CCNP, CompTIA Network+)
+* Experience with cloud networking (AWS, Azure)
+* Knowledge of SD-WAN technologies
+* Understanding of network automation and scripting
+* Experience with network security appliances
+________________
+
+
+7. Database Administrator
+Department: Database Management
+Reports to: Database Manager
+Employment Type: Full-time
+Experience Level: 4+ years
+Job Summary
+Technogen seeks an experienced Database Administrator to manage our database systems and ensure optimal performance, security, and availability of our data infrastructure.
+Key Responsibilities
+* Install, configure, and maintain database management systems
+* Monitor database performance and optimize queries and indexes
+* Implement backup and recovery procedures
+* Ensure database security and access controls
+* Plan and execute database migrations and upgrades
+* Troubleshoot database issues and performance bottlenecks
+* Collaborate with development teams on database design
+* Create and maintain database documentation
+* Implement disaster recovery procedures
+Required Qualifications
+* Bachelor's degree in Computer Science, Information Systems, or related field
+* 4+ years of experience as a Database Administrator
+* Expertise in major database systems (MySQL, PostgreSQL, Oracle, SQL Server)
+* Strong SQL programming and optimization skills
+* Experience with database backup and recovery procedures
+* Knowledge of database security best practices
+* Understanding of database design principles and normalization
+* Experience with database monitoring and performance tuning tools
+Preferred Qualifications
+* Database certifications (Oracle DBA, Microsoft SQL Server, etc.)
+* Experience with NoSQL databases (MongoDB, Cassandra, Redis)
+* Knowledge of cloud database services (RDS, Azure SQL, etc.)
+* Experience with database automation and scripting
+* Understanding of data warehouse and ETL processes
+________________
+
+
+Application Process
+To apply for any of these positions at Technogen, please submit your resume and cover letter through our careers portal or email us at careers@technogen.com. Please specify the position title in your subject line.
+Equal Opportunity Employer: Technogen is committed to creating a diverse environment and is proud to be an equal opportunity employer. All qualified applicants will receive consideration for employment without regard to race, color, religion, gender, gender identity or expression, sexual orientation, national origin, genetics, disability, age, or veteran status.

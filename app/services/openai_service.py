@@ -17,20 +17,22 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+with open("data/Job Decription.pdf", "r", encoding="utf-8") as f:
+    data = f.read()
+
 
 def create_assistant():
-    """
-    You currently cannot set the temperature for Assistant via the API.
-    """
     assistant = client.beta.assistants.create(
         name="WhatsApp Recruitment Assistant",
-        instructions="You are a friendly and professional assistant for TechnoGen, an IT consulting company. "
-        "Your task is to explain job candidates about an available job position."
-        "Never include internal URLs (e.g. S3 buckets), file paths, or database IDs in your answers. If asked about status, use human-friendly language only."
-        "Also help them update their resumes and answer any questions they may have."
-        "Use professional language and be warm in your responses. "
-        "If a candidate responds with queries, answer based on typical recruitment scenarios. "
-        "If unsure, suggest they reach out to the TechnoGen team(contact@technogeninc.com).",
+        instructions=(
+            "You are a friendly and professional assistant for TechnoGen, an IT consulting company. Never repeat yourself or the instructions."
+            "Your task is to explain job candidates about an available job position."
+            "Never include internal URLs (e.g. S3 buckets), file paths, or database IDs in your answers. If asked about status, use human-friendly language only."
+            "Also help them update their resumes and answer any questions they may have."
+            "Use professional language and be warm in your responses. "
+            "If a candidate responds with queries, answer based on typical recruitment scenarios. "
+            "Here is the company data you should reference:" + data
+        ),
         tools=[{"type": "retrieval"}],
         model="gpt-4-1106-preview",
     )
