@@ -1,21 +1,20 @@
-# app/tasks/tasks.py
-
-import logging
+# --- app/tasks/tasks.py ---
 from app.celery_app import celery_app
-from app.services.openai_service import generate_response
-from app.services.whatsapp_service import send_message, get_text_message_input
+from app.services.whatsapp_service import save_file_to_s3
+from app.services.dynamodb import save_thread
 
 
 @celery_app.task
-def process_whatsapp_text_async(wa_id: str, name: str, message_body: str):
-    """
-    Background task to process WhatsApp text using OpenAI and respond.
-    """
-    logging.info("Starting async processing for %s", wa_id)
+def save_resume_file_async(file_bytes, filename, content_type):
     try:
-        response = generate_response(message_body, wa_id, name)
-        data = get_text_message_input(wa_id, response)
-        send_message(data)
-        logging.info("Completed async task for %s", wa_id)
+        save_file_to_s3(file_bytes, filename, content_type)
     except Exception as e:
-        logging.error("Async processing failed for %s: %s", wa_id, str(e))
+        print(f"Failed to upload file to S3: {e}")
+
+
+@celery_app.task
+def update_thread_info_async(wa_id, thread_id):
+    try:
+        save_thread(wa_id, thread_id)
+    except Exception as e:
+        print(f"Failed to update thread in DB: {e}")

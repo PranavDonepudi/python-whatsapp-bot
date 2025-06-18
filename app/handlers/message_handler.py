@@ -1,14 +1,20 @@
 # --- app/handlers/message_handler.py ---
 import uuid
 import logging
-from app.services.openai_service import check_if_thread_exists, store_thread
+
+from app.services.openai_service import (
+    check_if_thread_exists,
+    store_thread,
+    run_assistant_and_get_response,
+)
 from app.services.whatsapp_service import (
+    get_text_message_input,
     download_whatsapp_media,
     send_message,
-    get_text_message_input,
     process_text_for_whatsapp,
 )
-from app.tasks.tasks import process_whatsapp_text_async
+from app.tasks.tasks import save_resume_file_async, update_thread_info_async
+from app.services.dynamodb import is_duplicate_message, mark_message_as_processed
 
 
 def handle_whatsapp_event(body):
@@ -19,55 +25,51 @@ def handle_whatsapp_event(body):
     message_id = message["id"]
     msg_type = message["type"]
 
-    from app.services.dynamodb import is_duplicate_message, mark_message_as_processed
-    from app.services.openai_service import check_if_thread_exists, store_thread, client
-
     if is_duplicate_message(message_id):
         logging.info("Duplicate message %s ignored.", message_id)
         return None
     mark_message_as_processed(message_id)
 
     thread_id = check_if_thread_exists(wa_id)
+    if not thread_id:
+        logging.info("Creating new thread for wa_id %s", wa_id)
+        from openai import OpenAI
+
+        client = OpenAI()
+        thread = client.beta.threads.create()
+        thread_id = thread.id
+        store_thread(wa_id, thread_id)
 
     if msg_type == "document":
         media_id = message["document"]["id"]
         filename = message["document"].get("filename", f"{wa_id}_{uuid.uuid4()}.pdf")
+        file_bytes, _, content_type = download_whatsapp_media(media_id)
 
-        file_bytes, _, content_type = download_whatsapp_media(media_id, filename)
-        if content_type not in (
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ):
-            reply = "Only PDF or Word documents accepted. Please upload your resume."
-        else:
-            reply = f"Thanks {name}, we got your resume updated. I'm happy to help you further on any questions."
+        send_message(
+            get_text_message_input(wa_id, "Thanks! We've received your document...")
+        )
 
-        data = get_text_message_input(wa_id, process_text_for_whatsapp(reply))
-        return send_message(data)
-
-    if msg_type == "text":
-        text_body = message["text"]["body"]
-
-        if not thread_id:
-            thread = client.beta.threads.create()
-            store_thread(wa_id, thread.id)
-
-            welcome = (
-                f"Hi {name}, welcome to TechnoGen's job bot! "
-                "If you want to update your resume, please upload it as a document. "
-                "Ask me anything about our openings or application process."
-            )
+        # Trigger assistant with context (no message added, but useful)
+        reply = run_assistant_and_get_response(wa_id, name, None)
+        if reply:
             send_message(
-                get_text_message_input(wa_id, process_text_for_whatsapp(welcome))
+                get_text_message_input(wa_id, process_text_for_whatsapp(reply))
             )
 
-        process_whatsapp_text_async.delay(wa_id, name, text_body)
-        return None
+        # Offload heavy tasks
+        save_resume_file_async.delay(file_bytes, filename, content_type)
+        update_thread_info_async.delay(wa_id, thread_id)
 
-    fallback = (
-        f"Sorry {name}, I only handle text messages and resume uploads right now."
-    )
-    return send_message(
-        get_text_message_input(wa_id, process_text_for_whatsapp(fallback))
-    )
+    elif msg_type == "text":
+        user_message = message["text"]["body"]
+        reply = run_assistant_and_get_response(wa_id, name, user_message)
+        if reply:
+            send_message(
+                get_text_message_input(wa_id, process_text_for_whatsapp(reply))
+            )
+        else:
+            send_message(
+                get_text_message_input(
+                    wa_id, "Sorry, I couldn't process that right now. Please try again."
+                )
+            )

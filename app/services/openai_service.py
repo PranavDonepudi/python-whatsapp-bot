@@ -122,6 +122,64 @@ def safe_add_message_to_thread(
                 raise
 
 
+def is_active_run(thread_id):
+    runs = client.beta.threads.runs.list(thread_id=thread_id)
+    for run in runs.data:
+        if run.status in ("in_progress", "queued", "requires_action"):
+            return True
+    return False
+
+
+def run_assistant_and_get_response(wa_id, name, user_message=None):
+    thread_data = get_thread(wa_id)
+    if not thread_data:
+        logging.warning(f"No thread found for {wa_id}")
+        return None
+
+    thread_id = thread_data["thread_id"]
+
+    if user_message:
+        try:
+            safe_add_message_to_thread(thread_id, user_message)
+        except Exception as e:
+            logging.error("Failed to add user message to thread: %s", e)
+            return None
+
+    if is_active_run(thread_id):
+        logging.info(f"Active run in progress for {thread_id}, skipping.")
+        return None
+
+    try:
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=OPENAI_ASSISTANT_ID,
+            instructions=(
+                f"You are talking to {name}, a job candidate. "
+                "Be warm and professional. Keep the conversation focused."
+            ),
+        )
+
+        for _ in range(20):  # ~20s timeout
+            run_status = client.beta.threads.runs.retrieve(
+                thread_id=thread_id, run_id=run.id
+            ).status
+            if run_status == "completed":
+                break
+            elif run_status in ("failed", "cancelled", "expired"):
+                logging.warning("Run failed or cancelled for thread: %s", thread_id)
+                return None
+            time.sleep(1)
+
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        for msg in reversed(messages.data):
+            if msg.role == "assistant":
+                return msg.content[0].text.value
+
+    except Exception as e:
+        logging.exception(f"Error running assistant for {wa_id}: {e}")
+        return None
+
+
 def generate_response(message_body, wa_id, name):
     # Get or create thread
     thread_id = check_if_thread_exists(wa_id)
