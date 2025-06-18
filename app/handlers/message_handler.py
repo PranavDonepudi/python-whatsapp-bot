@@ -16,7 +16,16 @@ def handle_whatsapp_event(body):
     wa_id = value["contacts"][0]["wa_id"]
     name = value["contacts"][0]["profile"]["name"]
     message = value["messages"][0]
+    message_id = message["id"]
     msg_type = message["type"]
+
+    from app.services.dynamodb import is_duplicate_message, mark_message_as_processed
+    from app.services.openai_service import check_if_thread_exists, store_thread, client
+
+    if is_duplicate_message(message_id):
+        logging.info("Duplicate message %s ignored.", message_id)
+        return None
+    mark_message_as_processed(message_id)
 
     thread_id = check_if_thread_exists(wa_id)
 
@@ -41,8 +50,6 @@ def handle_whatsapp_event(body):
         text_body = message["text"]["body"]
 
         if not thread_id:
-            from app.services.openai_service import client
-
             thread = client.beta.threads.create()
             store_thread(wa_id, thread.id)
 

@@ -1,5 +1,6 @@
 import boto3
 import os
+import logging
 from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
 from dotenv import load_dotenv
@@ -68,6 +69,31 @@ def save_message(wa_id, message_id, body, msg_type):
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
     )
+
+
+def is_duplicate_message(message_id):
+    table = dynamodb.Table(
+        "ProcessedMessages"
+    )  # create this table with message_id as PK
+    try:
+        response = table.get_item(Key={"message_id": message_id})
+        return "Item" in response
+    except Exception as e:
+        logging.error("Failed to check duplicate: %s", e)
+        return False
+
+
+def mark_message_as_processed(message_id):
+    table = dynamodb.Table("ProcessedMessages")
+    try:
+        table.put_item(
+            Item={
+                "message_id": message_id,
+                "processed_at": datetime.utcnow().isoformat(),
+            }
+        )
+    except Exception as e:
+        logging.error("Failed to mark message as processed: %s", e)
 
 
 def get_recent_messages(wa_id, limit=10):

@@ -89,6 +89,39 @@ def handle_candidate_reply(message, wa_id, name):
     return response
 
 
+def safe_add_message_to_thread(
+    thread_id: str, content: str, retries: int = 5, delay: float = 1.0
+):
+    """
+    Adds a message to the OpenAI thread, retrying if a run is still active.
+    """
+    for attempt in range(retries):
+        try:
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=content,
+            )
+            return  # success
+        except Exception as e:
+            error_message = str(e)
+            if "while a run" in error_message and attempt < retries - 1:
+                logging.warning(
+                    "Run active for thread %s. Retrying in %.1f seconds (attempt %d)...",
+                    thread_id,
+                    delay,
+                    attempt + 1,
+                )
+                time.sleep(delay)
+            else:
+                logging.error(
+                    "Failed to add message to thread after %d attempts: %s",
+                    retries,
+                    error_message,
+                )
+                raise
+
+
 def generate_response(message_body, wa_id, name):
     # Get or create thread
     thread_id = check_if_thread_exists(wa_id)
@@ -122,12 +155,7 @@ def generate_response(message_body, wa_id, name):
     save_message(wa_id, f"msg-{int(time.time())}", message_body, "user")
 
     # Add message to OpenAI thread
-    client.beta.threads.messages.create(
-        thread_id=thread_id,
-        role="user",
-        content=personalized_prompt,
-    )
-
+    safe_add_message_to_thread(thread_id, personalized_prompt)
     new_message = run_assistant(thread, name)
 
     # Save assistant response to message history
