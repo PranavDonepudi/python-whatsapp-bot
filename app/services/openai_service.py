@@ -31,7 +31,7 @@ def create_assistant():
             "Also help them update their resumes and answer any questions they may have."
             "Use professional language and be warm in your responses. "
             "If a candidate responds with queries, answer based on typical recruitment scenarios. "
-            "Here is the company data you should reference:" + data
+            "Here is the company job openings you should reference:" + data
         ),
         tools=[{"type": "retrieval"}],
         model="gpt-4-1106-preview",
@@ -57,7 +57,7 @@ def run_assistant(thread, name):
     run = client.beta.threads.runs.create(
         thread_id=thread.id,
         assistant_id=assistant.id,
-        instructions=f"You are talking to {name}, a job candidate. Be warm and professional.",
+        instructions=f"You are talking to {name}, a job candidate. Be warm and professional. Keep the conversation focused on the job position or candidate's queries.",
     )
 
     # Wait for completion
