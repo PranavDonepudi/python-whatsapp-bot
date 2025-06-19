@@ -7,7 +7,7 @@ celery_app = Celery(
     include=["app.tasks.tasks"],
 )
 
-celery_app.autodiscover_tasks(["app.tasks"])
+celery_app.autodiscover_tasks(["app.tasks.tasks"])
 # Tell Celery we’re using JSON (recommended) and set a default queue name
 celery_app.conf.update(
     accept_content=["json"],
