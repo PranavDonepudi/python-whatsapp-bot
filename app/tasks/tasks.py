@@ -5,7 +5,6 @@ from app.services.dynamodb import save_thread
 from app.services.openai_service import (
     check_if_thread_exists,
     store_thread,
-    get_thread,
     is_active_run,
     safe_add_message_to_thread,
 )
@@ -17,6 +16,7 @@ from app.services.whatsapp_service import (
 from openai import OpenAI
 import time
 import logging
+import os
 
 client = OpenAI()
 
