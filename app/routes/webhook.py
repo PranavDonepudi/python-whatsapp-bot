@@ -1,10 +1,9 @@
 # --- app/routes/webhook.py ---
 import logging
-import json
 from flask import Blueprint, request, jsonify, current_app
 from app.handlers.message_handler import handle_whatsapp_event
-from app.utils.validators import is_valid_whatsapp_message
-from app.utils.responses import respond_ok, respond_error
+
+from app.utils.responses import respond_error
 from app.decorators.security import signature_required
 
 webhook_blueprint = Blueprint("webhook", __name__)
@@ -26,18 +25,10 @@ def webhook_get():
 @webhook_blueprint.route("/webhook", methods=["POST"])
 @signature_required
 def webhook_post():
-    body = request.get_json()
-
-    if (
-        body.get("entry", [{}])[0]
-        .get("changes", [{}])[0]
-        .get("value", {})
-        .get("statuses")
-    ):
-        logging.info("Received a WhatsApp status update.")
-        return respond_ok()
-
-    if is_valid_whatsapp_message(body):
-        return handle_whatsapp_event(body)
-
-    return respond_error("Not a WhatsApp API event", 404)
+    try:
+        body = request.get_json()
+        handle_whatsapp_event(body)
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        logging.exception("Webhook failed")
+        return jsonify({"error": str(e)}), 500
