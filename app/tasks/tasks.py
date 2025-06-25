@@ -11,7 +11,7 @@ from app.services.openai_service import (
 from app.services.whatsapp_service import (
     send_message,
     get_text_message_input,
-)  # Add this import
+)
 
 from openai import OpenAI
 import time
