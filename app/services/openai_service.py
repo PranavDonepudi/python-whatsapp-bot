@@ -52,10 +52,13 @@ def store_thread(wa_id, thread_id):
 def poll_until_complete(thread_id, run_id, timeout_secs=20):
     for _ in range(timeout_secs):
         run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
+        logging.debug(f"[poll] Run status: {run.status}")
         if run.status == "completed":
             return True
         elif run.status in ("failed", "cancelled", "expired"):
-            logging.warning("Run status = %s for thread: %s", run.status, thread_id)
+            logging.error(
+                "Run failed for thread %s. Error: %s", thread_id, run.last_error
+            )
             return False
         time.sleep(1)
     logging.error("Timeout: Run did not complete for thread: %s", thread_id)
@@ -121,18 +124,18 @@ def run_assistant_and_get_response(wa_id, name, user_message=None):
         return None
 
     thread_id = thread_data["thread_id"]
+    logging.info(f"[run_assistant] Using thread: {thread_id} for {wa_id}")
 
     if user_message:
         try:
+            logging.debug(f"Adding user message to thread: {user_message}")
             safe_add_message_to_thread(thread_id, user_message)
         except Exception as e:
             logging.error("Failed to add user message: %s", e)
             return None
 
     if is_active_run(thread_id):
-        logging.info(
-            "Run already in progress for thread %s, skipping execution.", thread_id
-        )
+        logging.warning("Run already active for thread %s, skipping.", thread_id)
         return None
 
     try:
@@ -144,17 +147,24 @@ def run_assistant_and_get_response(wa_id, name, user_message=None):
                 "Be warm and professional. Keep the conversation focused."
             ),
         )
+        logging.info("Created run %s for thread %s", run.id, thread_id)
 
         if not poll_until_complete(thread_id, run.id):
+            logging.warning("Run did not complete successfully.")
             return None
 
         messages = client.beta.threads.messages.list(thread_id=thread_id)
         for msg in reversed(messages.data):
             if msg.role == "assistant":
-                return msg.content[0].text.value
+                response = msg.content[0].text.value
+                logging.info(f"Assistant response: {response}")
+                return response
+
+        logging.error("No assistant response found in thread: %s", thread_id)
+        return None
 
     except Exception as e:
-        logging.exception("Assistant error for %s: %s", wa_id, e)
+        logging.exception("OpenAI assistant failed for thread %s: %s", thread_id, e)
         return None
 
 
