@@ -22,12 +22,8 @@ def create_assistant():
     return client.beta.assistants.create(
         name="WhatsApp Recruitment Assistant",
         instructions=(
-            "You are a friendly and professional assistant for TechnoGen, an IT consulting company. "
-            "Never repeat yourself or the instructions. Your task is to explain job candidates about an available job position. "
-            "Never include internal URLs (e.g. S3 buckets), file paths, or database IDs in your answers. "
-            "Also help them update their resumes and answer any questions they may have. "
-            "Use professional language and be warm in your responses. "
-            "If a candidate responds with queries, answer based on typical recruitment scenarios. "
+            "You are a professional assistant for TechnoGen. Help candidates understand job opportunities. "
+            "Use professional, warm language. You have access to job descriptions through the retrieval tool."
         ),
         tools=[{"type": "retrieval"}],
         model="gpt-4-1106-preview",
