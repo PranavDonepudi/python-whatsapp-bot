@@ -4,8 +4,12 @@ import logging
 import re
 import requests
 import boto3
+import httpx
 from datetime import datetime
 
+WHATSAPP_API_URL = (
+    f"https://graph.facebook.com/v18.0/{os.getenv('PHONE_NUMBER_ID')}/messages"
+)
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 VERSION = os.getenv("VERSION", "v18.0")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
@@ -42,6 +46,23 @@ def send_message(payload: dict) -> requests.Response:
     response = requests.post(url, json=payload, headers=headers, timeout=10)
     log_http_response(response)
     return response
+
+
+def send_bot_initial_template(wa_id):
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": wa_id,
+        "type": "template",
+        "template": {"name": "bot_initial_message", "language": {"code": "en"}},
+    }
+
+    response = httpx.post(WHATSAPP_API_URL, headers=headers, json=payload)
+    return response.status_code, response.json()
 
 
 def _get_s3_client():
@@ -93,6 +114,15 @@ def save_file_to_s3(file_bytes: bytes, filename: str, content_type: str) -> str:
     )
     logging.info("Uploaded to S3 key: %s/%s", RESUME_BUCKET, key)
     return f"https://{RESUME_BUCKET}.s3.amazonaws.com/{key}"
+
+
+def send_bulk_initial_template(users):
+    results = []
+    for user in users:
+        wa_id = user.get("wa_id")
+        status, resp = send_bot_initial_template(wa_id)
+        results.append({"wa_id": wa_id, "status": status, "response": resp})
+    return results
 
 
 def process_text_for_whatsapp(text: str) -> str:
