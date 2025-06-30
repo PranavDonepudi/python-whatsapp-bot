@@ -17,10 +17,6 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Load job description data
-with open("data/JD.txt", "r", encoding="utf-8") as f:
-    job_description_data = f.read()
-
 
 def create_assistant():
     return client.beta.assistants.create(
@@ -32,8 +28,6 @@ def create_assistant():
             "Also help them update their resumes and answer any questions they may have. "
             "Use professional language and be warm in your responses. "
             "If a candidate responds with queries, answer based on typical recruitment scenarios. "
-            "Here is the company job openings you should reference:\n"
-            + job_description_data
         ),
         tools=[{"type": "retrieval"}],
         model="gpt-4-1106-preview",
