@@ -48,7 +48,7 @@ def send_message(payload: dict) -> requests.Response:
     return response
 
 
-def send_bot_initial_template(wa_id):
+def send_bot_initial_template(wa_id, name):
     headers = {
         "Authorization": f"Bearer {ACCESS_TOKEN}",
         "Content-Type": "application/json",
@@ -58,7 +58,13 @@ def send_bot_initial_template(wa_id):
         "messaging_product": "whatsapp",
         "to": wa_id,
         "type": "template",
-        "template": {"name": "bot_initial_message", "language": {"code": "en"}},
+        "template": {
+            "name": "bot_initial_message",
+            "language": {"code": "en"},
+            "components": [
+                {"type": "body", "parameters": [{"type": "text", "text": name}]}
+            ],
+        },
     }
 
     response = httpx.post(WHATSAPP_API_URL, headers=headers, json=payload)
@@ -120,7 +126,8 @@ def send_bulk_initial_template(users):
     results = []
     for user in users:
         wa_id = user.get("wa_id")
-        status, resp = send_bot_initial_template(wa_id)
+        name = user.get("name", "Candidate")
+        status, resp = send_bot_initial_template(wa_id, name)
         results.append({"wa_id": wa_id, "status": status, "response": resp})
     return results
 
