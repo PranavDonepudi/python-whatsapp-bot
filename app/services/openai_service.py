@@ -26,7 +26,7 @@ def create_assistant():
             "Use professional, warm language. Keep responses concise (under 300 words / 500 tokens). "
         ),
         tools=[{"type": "retrieval"}],
-        model="gpt-4-1106-preview",
+        model="gpt-3.5-turbo-1106",
     )
 
 
