@@ -23,7 +23,7 @@ def create_assistant():
         name="WhatsApp Recruitment Assistant",
         instructions=(
             "You are a professional assistant for TechnoGen. Help candidates understand job opportunities. "
-            "Use professional, warm language. You have access to job descriptions through the retrieval tool."
+            "Use professional, warm language. Keep responses concise (under 300 words / 500 tokens). "
         ),
         tools=[{"type": "retrieval"}],
         model="gpt-4-1106-preview",
@@ -60,7 +60,10 @@ def run_assistant(thread, name):
     run = client.beta.threads.runs.create(
         thread_id=thread.id,
         assistant_id=assistant.id,
-        instructions=f"You are talking to {name}, a job candidate. Be warm and professional. Keep the conversation focused.",
+        instructions=f"""
+        You are talking to {name}, a job candidate. Be warm and professional. 
+        Keep your responses short (under 300 words / 500 tokens). Avoid long summaries.
+        """,
     )
 
     if not poll_until_complete(thread.id, run.id):
