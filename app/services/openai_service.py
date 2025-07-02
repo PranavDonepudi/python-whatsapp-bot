@@ -57,20 +57,43 @@ def poll_until_complete(thread_id, run_id, timeout_secs=20):
 
 def run_assistant(thread, name):
     assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
+    # Step 1: Fetch last N messages only (reduce tokens)
+    messages = client.beta.threads.messages.list(thread_id=thread.id, limit=5)
+    trimmed_messages = []
+
+    total_words = 0
+    max_words = 1000  # Adjust based on safe token count (~1000 words ~ 1500 tokens)
+
+    # Step 2: Trim content from newest to oldest until within limit
+    for msg in reversed(messages.data):
+        if msg.role == "user":
+            text = msg.content[0].text.value
+            word_count = len(text.split())
+            if total_words + word_count > max_words:
+                continue
+            total_words += word_count
+            trimmed_messages.insert(0, {"role": "user", "content": text})
+
+    # Step 3: Create a temporary thread with just trimmed content
+    new_thread = client.beta.threads.create(messages=trimmed_messages)
+
+    # Step 4: Start assistant run with stricter instructions
     run = client.beta.threads.runs.create(
-        thread_id=thread.id,
+        thread_id=new_thread.id,
         assistant_id=assistant.id,
-        instructions=f"""
-        You are talking to {name}, a job candidate. Be warm and professional. 
-        Keep your responses short (under 300 words / 500 tokens). Avoid long summaries.
-        """,
+        instructions=(
+            f"You are talking to {name}, a job candidate. "
+            "Be warm and professional. Keep the response short, under 500 tokens."
+        ),
     )
 
-    if not poll_until_complete(thread.id, run.id):
-        raise RuntimeError(f"Run failed or timed out for thread {thread.id}")
+    if not poll_until_complete(new_thread.id, run.id):
+        raise RuntimeError(f"Run failed or timed out for thread {new_thread.id}")
 
-    messages = client.beta.threads.messages.list(thread_id=thread.id)
-    for msg in reversed(messages.data):
+    response_messages = client.beta.threads.messages.list(
+        thread_id=new_thread.id, limit=3
+    )
+    for msg in reversed(response_messages.data):
         if msg.role == "assistant":
             return msg.content[0].text.value
 
