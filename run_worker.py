@@ -1,63 +1,28 @@
 # run_worker.py
+
 import boto3
 import json
 import logging
 import os
+import threading
 import time
+from flask import Flask
 from botocore.exceptions import ClientError
-from app.handlers.message_handler import (
-    download_whatsapp_media,
-    send_message,
-    get_text_message_input,
-    process_text_for_whatsapp,
-    initialize_thread_if_needed,
-)
-from app.tasks.tasks import save_resume_file_async, update_thread_info_async
-from app.services.openai_service import run_assistant_and_get_response
-from app.services.dynamodb import (
-    is_duplicate_message,
-    mark_message_as_processed,
-)
+
+from app.tasks.gpt_reply_worker import handle_gpt_reply
 
 logging.basicConfig(level=logging.INFO)
 
-# Configure SQS client
+# Configure SQS
 sqs = boto3.client("sqs", region_name=os.getenv("AWS_REGION", "us-east-2"))
 QUEUE_URL = os.getenv("SQS_QUEUE_URL")
 
+app = Flask(__name__)
 
-def process_sqs_message(message: dict):
-    wa_id = message["wa_id"]
-    name = message["name"]
-    msg_type = message["message_type"]
-    msg_body = message.get("message_body")
-    media_id = message.get("media_id")
-    filename = message.get("filename")
-    message_id = message.get("message_id")
 
-    if is_duplicate_message(message_id):
-        return
-    mark_message_as_processed(message_id)
-    thread_id = initialize_thread_if_needed(wa_id)
-
-    if msg_type == "text":
-        reply = run_assistant_and_get_response(wa_id, name, msg_body)
-        if reply:
-            send_message(
-                get_text_message_input(wa_id, process_text_for_whatsapp(reply))
-            )
-    elif msg_type == "document":
-        file_bytes, _, content_type = download_whatsapp_media(media_id)
-        send_message(
-            get_text_message_input(wa_id, "Thanks! We've received your document.")
-        )
-        reply = run_assistant_and_get_response(wa_id, name, None)
-        if reply:
-            send_message(
-                get_text_message_input(wa_id, process_text_for_whatsapp(reply))
-            )
-        save_resume_file_async.delay(file_bytes, filename, content_type)
-        update_thread_info_async.delay(wa_id, thread_id)
+@app.route("/health", methods=["GET"])
+def health_check():
+    return {"status": "ok"}, 200
 
 
 def poll_sqs():
@@ -68,8 +33,8 @@ def poll_sqs():
             response = sqs.receive_message(
                 QueueUrl=QUEUE_URL,
                 MaxNumberOfMessages=5,
-                WaitTimeSeconds=10,  # Long-polling to reduce cost
-                VisibilityTimeout=60,  # Allow 60 seconds to process before retry
+                WaitTimeSeconds=10,  # long polling
+                VisibilityTimeout=60,
             )
 
             messages = response.get("Messages", [])
@@ -81,20 +46,21 @@ def poll_sqs():
                 try:
                     body = json.loads(msg["Body"])
                     logging.info(f"[Worker] Received message: {body}")
-
-                    process_sqs_message(body)
-
-                    # If successful, delete message from queue
+                    handle_gpt_reply(body)
                     sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt_handle)
                     logging.info("[Worker] Deleted message from queue.")
-
                 except Exception as e:
                     logging.exception(f"[Worker] Failed to process message: {e}")
 
         except ClientError as e:
             logging.error(f"[Worker] AWS ClientError: {e}")
-            time.sleep(5)  # Backoff before retry
+            time.sleep(5)
 
 
 if __name__ == "__main__":
-    poll_sqs()
+    # Start the SQS polling in a background thread
+    threading.Thread(target=poll_sqs, daemon=True).start()
+
+    # Run Flask server to keep App Runner happy (Health Check)
+    port = int(os.getenv("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
