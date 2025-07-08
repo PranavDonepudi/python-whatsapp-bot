@@ -15,13 +15,10 @@ MESSAGES_TABLE = os.getenv("MESSAGES_TABLE")
 if not MESSAGES_TABLE or MESSAGES_TABLE == "MESSAGES_TABLE":
     MESSAGES_TABLE = "WhatsAppMessages"
 
-# DynamoDB connection
-dynamodb = boto3.resource(
-    "dynamodb",
-    region_name=os.getenv("AWS_REGION", "us-east-2"),
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-)
+dynamodb = boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION", "us-east-2"))
+
+threads_table = dynamodb.Table(THREADS_TABLE)
+messages_table = dynamodb.Table(MESSAGES_TABLE)
 
 
 def get_threads_table():
