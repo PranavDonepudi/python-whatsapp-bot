@@ -19,7 +19,6 @@ from app.services.openai_service import (
     safe_add_message_to_thread,
     is_active_run,
     run_assistant,
-    run_assistant_and_get_response,
 )
 from app.services.dynamodb import save_thread
 
