@@ -36,11 +36,11 @@ def webhook_post():
                 {
                     "wa_id": wa_id,
                     "name": name,
-                    "message_type": message["type"],
+                    "message_type": message.get("type"),
                     "message_body": message.get("text", {}).get("body"),
                     "media_id": message.get("document", {}).get("id"),
                     "filename": message.get("document", {}).get("filename"),
-                    "message_id": message["id"],
+                    "message_id": message.get("id"),
                 }
             )
         return jsonify({"status": "queued"}), 200

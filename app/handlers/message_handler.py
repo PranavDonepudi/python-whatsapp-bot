@@ -11,8 +11,9 @@ from app.services.whatsapp_service import (
     send_message,
     get_text_message_input,
     process_text_for_whatsapp,
+    save_file_to_s3,
 )
-from app.tasks.tasks import save_resume_file_async, update_thread_info_async
+from app.services.dynamodb import save_thread
 
 
 def is_valid_whatsapp_message(body):
@@ -57,8 +58,9 @@ def handle_document_message(wa_id, name, message, thread_id):
     if reply:
         send_message(get_text_message_input(wa_id, process_text_for_whatsapp(reply)))
 
-    save_resume_file_async.delay(file_bytes, filename, content_type)
-    update_thread_info_async.delay(wa_id, thread_id)
+    # Call these functions directly instead of using Celery
+    save_file_to_s3(file_bytes, filename, content_type)
+    save_thread(wa_id, thread_id)
 
 
 def handle_text_message(wa_id, name, message_text):
