@@ -5,11 +5,11 @@ import uuid
 from dotenv import load_dotenv
 from openai import OpenAI
 from app.services.dynamodb import (
-    save_thread,
     get_thread,
     save_message,
     get_recent_messages,
 )
+from app.services.dynamodb import save_thread
 
 load_dotenv()
 
@@ -35,10 +35,6 @@ def check_if_thread_exists(wa_id):
     return item["thread_id"] if item else None
 
 
-def store_thread(wa_id, thread_id):
-    save_thread(wa_id, thread_id)
-
-
 def poll_until_complete(thread_id, run_id, timeout_secs=20):
     for _ in range(timeout_secs):
         run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
@@ -55,49 +51,36 @@ def poll_until_complete(thread_id, run_id, timeout_secs=20):
     return False
 
 
-def run_assistant(thread, name):
-    assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
-    # Step 1: Fetch last N messages only (reduce tokens)
-    messages = client.beta.threads.messages.list(thread_id=thread.id, limit=5)
-    trimmed_messages = []
+def run_assistant(thread_id, name):
+    """
+    Runs the assistant on an existing thread and returns the assistant reply.
+    """
+    try:
+        assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
 
-    total_words = 0
-    max_words = 1000  # Adjust based on safe token count (~1000 words ~ 1500 tokens)
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=assistant.id,
+            instructions=(
+                f"You are talking to {name}, a job candidate. "
+                "Be warm and professional. Keep the response under 500 tokens."
+            ),
+        )
 
-    # Step 2: Trim content from newest to oldest until within limit
-    for msg in reversed(messages.data):
-        if msg.role == "user":
-            text = msg.content[0].text.value
-            word_count = len(text.split())
-            if total_words + word_count > max_words:
-                continue
-            total_words += word_count
-            trimmed_messages.insert(0, {"role": "user", "content": text})
+        if not poll_until_complete(thread_id, run.id):
+            raise RuntimeError(f"Run failed or timed out for thread {thread_id}")
 
-    # Step 3: Create a temporary thread with just trimmed content
-    new_thread = client.beta.threads.create(messages=trimmed_messages)
+        # Fetch assistant reply
+        messages = client.beta.threads.messages.list(thread_id=thread_id, limit=5)
+        for msg in reversed(messages.data):
+            if msg.role == "assistant":
+                return msg.content[0].text.value
 
-    # Step 4: Start assistant run with stricter instructions
-    run = client.beta.threads.runs.create(
-        thread_id=new_thread.id,
-        assistant_id=assistant.id,
-        instructions=(
-            f"You are talking to {name}, a job candidate. "
-            "Be warm and professional. Keep the response short, under 500 tokens."
-        ),
-    )
+        raise ValueError("No assistant message found")
 
-    if not poll_until_complete(new_thread.id, run.id):
-        raise RuntimeError(f"Run failed or timed out for thread {new_thread.id}")
-
-    response_messages = client.beta.threads.messages.list(
-        thread_id=new_thread.id, limit=3
-    )
-    for msg in reversed(response_messages.data):
-        if msg.role == "assistant":
-            return msg.content[0].text.value
-
-    raise ValueError("No assistant response found")
+    except Exception as e:
+        logging.exception(f"Error running assistant on thread {thread_id}")
+        raise
 
 
 def safe_add_message_to_thread(
@@ -193,7 +176,7 @@ def generate_response(message_body, wa_id, name):
         logging.info("Creating new thread for %s", wa_id)
         thread = client.beta.threads.create()
         thread_id = thread.id
-        store_thread(wa_id, thread_id)
+        save_thread(wa_id, thread_id)
 
     # Collect context
     context_messages = get_recent_messages(wa_id, limit=4)

@@ -3,7 +3,6 @@ import logging
 from app.services.dynamodb import is_duplicate_message, mark_message_as_processed
 from app.services.openai_service import (
     check_if_thread_exists,
-    store_thread,
     run_assistant_and_get_response,
 )
 from app.services.whatsapp_service import (
@@ -41,7 +40,7 @@ def initialize_thread_if_needed(wa_id):
         client = OpenAI()
         thread = client.beta.threads.create()
         thread_id = thread.id
-        store_thread(wa_id, thread_id)
+        save_thread(wa_id, thread_id)
     return thread_id
 
 

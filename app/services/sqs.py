@@ -25,6 +25,7 @@ def push_message_to_sqs(message_dict):
             MessageBody=json.dumps(message_dict),
         )
         logging.info(f"Message pushed to SQS: {response.get('MessageId')}")
+        logging.info(f"Pushed to SQS: {json.dumps(message_dict)}")
     except (BotoCoreError, ClientError) as e:
         logging.exception("Failed to push message to SQS")
         raise
