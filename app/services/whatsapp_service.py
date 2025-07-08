@@ -13,8 +13,6 @@ WHATSAPP_API_URL = (
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 VERSION = os.getenv("VERSION", "v18.0")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 RESUME_BUCKET = os.getenv("RESUME_BUCKET")
 
@@ -49,14 +47,9 @@ def send_message(payload: dict) -> requests.Response:
 
 
 def _get_s3_client():
-    if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
-        raise RuntimeError("AWS credentials are not set in environment")
-
     return boto3.client(
         "s3",
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=AWS_REGION,
+        region_name=os.getenv("AWS_REGION", "us-east-2"),  # use your region here
     )
 
 
