@@ -58,6 +58,9 @@ def poll_sqs():
 
 
 if __name__ == "__main__":
+    logging.info("[Worker] Bootstrapping...")
+    # Delay so we can read logs before it crashes silently
+    time.sleep(5)
     # Start the SQS polling in a background thread
     threading.Thread(target=poll_sqs, daemon=True).start()
 
