@@ -13,7 +13,13 @@ from app.services.whatsapp_service import (
     save_file_to_s3,
 )
 
-from app.services.openai_service import generate_response
+from app.services.openai_service import (
+    run_assistant,
+    check_if_thread_exists,
+    safe_add_message_to_thread,
+    is_active_run,
+    save_thread,
+)
 
 client = OpenAI()
 
@@ -29,18 +35,31 @@ def handle_gpt_reply(payload):
     logging.info(f"[GPT Worker] Handling message from {wa_id}: {message_body}")
 
     try:
-        # Handle document uploads first
+        # Step 1: Check or create thread
+        thread_id = check_if_thread_exists(wa_id)
+        if not thread_id:
+            thread = client.beta.threads.create()
+            thread_id = thread.id
+            save_thread(wa_id, thread_id)
+
+        # Step 2: If document, handle upload and exit
         if message_type == "document":
             send_message(
                 get_text_message_input(wa_id, "Thanks! We've received your resume.")
             )
             file_bytes, _, content_type = download_whatsapp_media(media_id, filename)
             save_file_to_s3(file_bytes, filename, content_type)
+            save_thread(wa_id, thread_id)
             return
 
-        # For text messages, generate response using GPT
-        reply = generate_response(message_body, wa_id, name)
+        # Step 3: If text, process via assistant
+        safe_add_message_to_thread(thread_id, message_body)
 
+        if is_active_run(thread_id):
+            logging.warning(f"[GPT Worker] Run already active for {wa_id}")
+            return
+
+        reply = run_assistant(thread_id, name)
         if reply:
             send_message(
                 get_text_message_input(wa_id, process_text_for_whatsapp(reply))
