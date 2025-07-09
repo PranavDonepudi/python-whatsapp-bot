@@ -69,9 +69,7 @@ def save_message(wa_id, message_id, body, msg_type):
 
 
 def is_duplicate_message(message_id):
-    table = dynamodb.Table(
-        "ProcessedMessages"
-    )  # create this table with message_id as PK
+    table = dynamodb.Table("ProcessedMessages")
     try:
         response = table.get_item(Key={"message_id": message_id})
         return "Item" in response
@@ -93,7 +91,7 @@ def mark_message_as_processed(message_id):
         logging.error("Failed to mark message as processed: %s", e)
 
 
-def get_recent_messages(wa_id, limit=10):
+def get_recent_messages(wa_id, limit=4):
     table = dynamodb.Table(get_messages_table())
     response = table.query(
         KeyConditionExpression=Key("wa_id").eq(wa_id),

@@ -57,7 +57,6 @@ def handle_document_message(wa_id, name, message, thread_id):
     if reply:
         send_message(get_text_message_input(wa_id, process_text_for_whatsapp(reply)))
 
-    # Call these functions directly instead of using Celery
     save_file_to_s3(file_bytes, filename, content_type)
     save_thread(wa_id, thread_id)
 

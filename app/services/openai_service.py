@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import boto3
 import uuid
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -181,7 +182,7 @@ def generate_response(message_body, wa_id, name):
     # Collect context
     context_messages = get_recent_messages(wa_id, limit=4)
     context_str = "\n".join(
-        f"{m['message_type'].capitalize()}: {m['message_body'][:300]}"  # Truncate each message to 300 chars
+        f"{m['message_type'].capitalize()}: {m['message_body'][:300]}"
         for m in reversed(context_messages)
     )
 
