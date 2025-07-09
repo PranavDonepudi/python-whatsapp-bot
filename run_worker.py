@@ -57,12 +57,11 @@ def poll_sqs():
             time.sleep(5)
 
 
+# SQS polling immediately when module is loaded (not inside __main__)
+threading.Thread(target=poll_sqs, daemon=True).start()
+
 if __name__ == "__main__":
     logging.info("[Worker] Bootstrapping...")
-    # Delay so we can read logs before it crashes silently
-    time.sleep(5)
-    # Start the SQS polling in a background thread
-    threading.Thread(target=poll_sqs, daemon=True).start()
 
     # Run Flask server to keep App Runner happy (Health Check)
     port = int(os.getenv("PORT", 8080))
