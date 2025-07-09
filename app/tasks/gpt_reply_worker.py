@@ -21,7 +21,6 @@ from app.services.openai_service import (
 from app.services.dynamodb import save_thread
 from app.handlers.message_handler import (
     handle_document_message,
-    extract_whatsapp_message,
 )
 
 client = OpenAI()
@@ -45,8 +44,11 @@ def handle_gpt_reply(payload):
 
         # Step 2: If document, handle upload and exit
         if message_type == "document":
-            wa_id, name, message = extract_whatsapp_message(payload)
-            handle_document_message(wa_id, name, message, thread_id)
+            media_id = payload.get("media_id")
+            filename = payload.get("filename", f"{wa_id}.pdf")
+
+            # Proceed with document handling
+            handle_document_message(wa_id, name, media_id, filename)
             return
 
         # Step 3: If text, process via assistant
