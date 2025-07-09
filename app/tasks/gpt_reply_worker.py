@@ -2,7 +2,6 @@
 import json
 import time
 import logging
-import os
 import uuid
 
 from openai import OpenAI
@@ -10,6 +9,8 @@ from app.services.whatsapp_service import (
     send_message,
     get_text_message_input,
     process_text_for_whatsapp,
+    download_whatsapp_media,
+    save_file_to_s3,
 )
 
 from app.services.openai_service import (
@@ -19,9 +20,6 @@ from app.services.openai_service import (
     run_assistant,
 )
 from app.services.dynamodb import save_thread
-from app.handlers.message_handler import (
-    handle_document_message,
-)
 
 client = OpenAI()
 
@@ -29,6 +27,8 @@ client = OpenAI()
 def handle_gpt_reply(payload):
     wa_id = payload["wa_id"]
     name = payload.get("name", "Candidate")
+    media_id = payload.get("media_id")
+    filename = payload.get("filename") or f"{wa_id}_{uuid.uuid4()}.pdf"
     message_type = payload.get("message_type", "text")
     message_body = payload.get("message_body", "")
 
@@ -44,11 +44,12 @@ def handle_gpt_reply(payload):
 
         # Step 2: If document, handle upload and exit
         if message_type == "document":
-            media_id = payload.get("media_id")
-            filename = payload.get("filename", f"{wa_id}.pdf")
-
-            # Proceed with document handling
-            handle_document_message(wa_id, name, media_id, filename)
+            send_message(
+                get_text_message_input(wa_id, "Thanks! We've received your resume.")
+            )
+            file_bytes, _, content_type = download_whatsapp_media(media_id, filename)
+            save_file_to_s3(file_bytes, filename, content_type)
+            save_thread(wa_id, thread_id)
             return
 
         # Step 3: If text, process via assistant
