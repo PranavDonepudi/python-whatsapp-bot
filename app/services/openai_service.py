@@ -201,7 +201,7 @@ def generate_response(message_body, wa_id, name):
 
     # Add message to OpenAI
     safe_add_message_to_thread(thread_id, prompt)
-    response = run_assistant(thread, name)
+    response = run_assistant(thread_id, name)
 
     # Save assistant response
     msg_id_assistant = str(uuid.uuid4())
