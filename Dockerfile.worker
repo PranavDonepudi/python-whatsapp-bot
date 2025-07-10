@@ -8,4 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "run_worker.py"]
+ENV SERVICE_TYPE=worker
+
+CMD ["sh", "-c", "if [ \"$SERVICE_TYPE\" = 'celery' ]; then celery -A celery_app worker --loglevel=info; else python run_worker.py; fi"]

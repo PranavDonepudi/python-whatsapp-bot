@@ -1,21 +1,19 @@
 # --- app/tasks/gpt_reply_worker.py ---
 import logging
 import uuid
-
+from celery_app import app
 from openai import OpenAI
+from app.services.dynamodb import save_message
 from app.services.whatsapp_service import (
     send_message,
     get_text_message_input,
     process_text_for_whatsapp,
-    download_whatsapp_media,
-    save_file_to_s3,
 )
-
-from app.services.openai_service import (
-    check_if_thread_exists,
-    generate_response,
-    save_thread,
+from app.tasks.background_tasks import (
+    handle_document_upload_async,
+    store_thread_to_dynamodb,
 )
+from app.services.openai_service import check_if_thread_exists, generate_response
 
 client = OpenAI()
 
@@ -28,12 +26,12 @@ def handle_gpt_reply(payload):
     message_type = payload.get("message_type", "text")
     message_body = payload.get("message_body", "")
 
-    logging.info(f"[GPT Worker] Handling message from {wa_id}: {message_body}")
+    logging.info("[GPT Worker] Handling message from %s: %s", wa_id, message_body)
 
     # Skip unsupported or empty messages
     if not message_body or message_type not in ["text", "document"]:
         logging.warning(
-            f"[GPT Worker] Skipping unsupported or empty message from {wa_id}"
+            "[GPT Worker] Skipping unsupported or empty message from %s", wa_id
         )
         return
 
@@ -43,22 +41,21 @@ def handle_gpt_reply(payload):
         if not thread_id:
             thread = client.beta.threads.create()
             thread_id = thread.id
-            save_thread(wa_id, thread_id)
+            store_thread_to_dynamodb.delay(wa_id, thread_id)
 
         # Step 2: Handle document uploads separately
         if message_type == "document":
             send_message(
                 get_text_message_input(wa_id, "Thanks! We've received your resume.")
-            )
-            file_bytes, _, content_type = download_whatsapp_media(media_id, filename)
-            save_file_to_s3(file_bytes, filename, content_type)
+            )  # Push to background
+            handle_document_upload_async.delay(wa_id, media_id, filename, thread_id)
             return
 
-        # Step 3: Generate GPT response using rich context
+        # Step 3: Generate GPT response using context
         try:
             reply = generate_response(message_body, wa_id, name)
         except Exception as gpt_error:
-            logging.exception(f"[GPT Worker] GPT failed for {wa_id}: {gpt_error}")
+            logging.exception("[GPT Worker] GPT failed for %s: %s", wa_id, gpt_error)
             fallback = "Sorry, we're facing a temporary issue. Please try again in a few minutes."
             send_message(get_text_message_input(wa_id, fallback))
             return
@@ -67,7 +64,7 @@ def handle_gpt_reply(payload):
             send_message(
                 get_text_message_input(wa_id, process_text_for_whatsapp(reply))
             )
-            logging.info(f"[GPT Worker] Replied to {wa_id}")
+            logging.info("[GPT Worker] Replied to %s", wa_id)
         else:
             logging.warning(f"[GPT Worker] No assistant reply for {wa_id}")
 
