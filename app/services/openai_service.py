@@ -197,10 +197,10 @@ def generate_response(message_body, wa_id, name):
         thread_id = thread.id
         save_thread(wa_id, thread_id)
 
-        # 💤 Let OpenAI hydrate the thread before writing to it
+        # Let OpenAI hydrate the thread before writing to it
         time.sleep(0.3)
 
-    # 🧠 Collect recent context (reduce to last 2 messages for speed)
+    # Collect recent context (reduce to last 2 messages for speed)
     context_messages = get_recent_messages(wa_id, limit=2)
     context_str = "\n".join(
         f"{m['message_type'].capitalize()}: {m['message_body'][:300]}"

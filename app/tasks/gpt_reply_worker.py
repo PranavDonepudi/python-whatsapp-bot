@@ -3,7 +3,7 @@ import logging
 import uuid
 from celery_app import app
 from openai import OpenAI
-from app.services.dynamodb import save_message
+from app.services.dynamodb import save_thread
 from app.services.whatsapp_service import (
     send_message,
     get_text_message_input,
@@ -11,7 +11,6 @@ from app.services.whatsapp_service import (
 )
 from app.tasks.background_tasks import (
     handle_document_upload_async,
-    store_thread_to_dynamodb,
 )
 from app.services.openai_service import check_if_thread_exists, generate_response
 
@@ -41,7 +40,7 @@ def handle_gpt_reply(payload):
         if not thread_id:
             thread = client.beta.threads.create()
             thread_id = thread.id
-            store_thread_to_dynamodb.delay(wa_id, thread_id)
+            save_thread(wa_id, thread_id)
 
         # Step 2: Handle document uploads separately
         if message_type == "document":

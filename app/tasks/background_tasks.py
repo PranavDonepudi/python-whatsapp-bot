@@ -32,7 +32,7 @@ def handle_document_upload_async(wa_id, media_id, filename, thread_id=None):
         if thread_id:
             save_thread(wa_id, thread_id)
 
-        print(f"[✓] Uploaded resume for {wa_id}")
+        print(f"Uploaded resume for {wa_id}")
 
     except Exception as e:
         print(f"[ERROR] Document upload failed for {wa_id}: {e}")
