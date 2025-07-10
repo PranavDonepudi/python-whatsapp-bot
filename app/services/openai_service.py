@@ -52,7 +52,7 @@ def poll_until_complete(thread_id, run_id, timeout_secs=20):
     return False
 
 
-def run_assistant(thread_id, name):
+def run_assistant(thread_id, name, message_body=None):
     """
     Runs the assistant on an existing thread and returns the assistant reply.
     """
@@ -64,7 +64,8 @@ def run_assistant(thread_id, name):
             assistant_id=assistant.id,
             instructions=(
                 f"You are talking to {name}, a job candidate. "
-                "Be warm and professional. Keep the response under 500 tokens."
+                f"Their message is: '{message_body}'. "
+                "Be warm and professional. Address the message clearly and keep the response under 500 tokens."
             ),
         )
 
