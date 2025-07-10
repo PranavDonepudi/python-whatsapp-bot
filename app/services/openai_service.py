@@ -4,6 +4,7 @@ import time
 import boto3
 import uuid
 from dotenv import load_dotenv
+import openai
 from openai import OpenAI
 from app.services.dynamodb import (
     get_thread,
@@ -52,37 +53,52 @@ def poll_until_complete(thread_id, run_id, timeout_secs=20):
     return False
 
 
-def run_assistant(thread_id, name, message_body=None):
-    """
-    Runs the assistant on an existing thread and returns the assistant reply.
-    """
-    try:
-        assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
+def run_assistant(thread_id, name, message_body=None, retries=3, delay=2):
+    for attempt in range(retries):
+        try:
+            assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
 
-        run = client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=assistant.id,
-            instructions=(
-                f"You are talking to {name}, a job candidate. "
-                f"Their message is: '{message_body}'. "
-                "Be warm and professional. Address the message clearly and keep the response under 500 tokens."
-            ),
-        )
+            if message_body:
+                instructions = (
+                    f"You are talking to {name}, a job candidate. "
+                    f"Their message is: '{message_body}'. "
+                    "Be warm and professional. Keep the response under 500 tokens."
+                )
+            else:
+                instructions = (
+                    f"You are talking to {name}, a job candidate. "
+                    "Be warm and professional. Keep the response under 500 tokens."
+                )
 
-        if not poll_until_complete(thread_id, run.id):
-            raise RuntimeError(f"Run failed or timed out for thread {thread_id}")
+            run = client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=assistant.id,
+                instructions=instructions,
+            )
 
-        # Fetch assistant reply
-        messages = client.beta.threads.messages.list(thread_id=thread_id, limit=5)
-        for msg in reversed(messages.data):
-            if msg.role == "assistant":
-                return msg.content[0].text.value
+            if not poll_until_complete(thread_id, run.id):
+                raise RuntimeError(f"Run failed or timed out for thread {thread_id}")
 
-        raise ValueError("No assistant message found")
+            messages = client.beta.threads.messages.list(thread_id=thread_id, limit=5)
+            for msg in reversed(messages.data):
+                if msg.role == "assistant":
+                    return msg.content[0].text.value
 
-    except Exception as e:
-        logging.exception(f"Error running assistant on thread {thread_id}")
-        raise
+            raise ValueError("No assistant message found")
+
+        except openai.InternalServerError as e:
+            logging.warning(
+                f"[run_assistant] Attempt {attempt + 1}/{retries} - OpenAI server error: {e}"
+            )
+            time.sleep(delay)
+
+        except Exception as e:
+            logging.exception(
+                f"[run_assistant] Unhandled error on attempt {attempt + 1}"
+            )
+            raise
+
+    raise RuntimeError("[run_assistant] Failed to retrieve assistant after retries")
 
 
 def safe_add_message_to_thread(

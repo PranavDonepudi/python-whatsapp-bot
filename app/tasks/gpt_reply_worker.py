@@ -45,7 +45,7 @@ def handle_gpt_reply(payload):
             thread_id = thread.id
             save_thread(wa_id, thread_id)
 
-        # Step 2: Handle document upload separately
+        # Step 2: Handle document uploads separately
         if message_type == "document":
             send_message(
                 get_text_message_input(wa_id, "Thanks! We've received your resume.")
@@ -54,8 +54,14 @@ def handle_gpt_reply(payload):
             save_file_to_s3(file_bytes, filename, content_type)
             return
 
-        # Step 3: Generate GPT response using context-aware function
-        reply = generate_response(message_body, wa_id, name)
+        # Step 3: Generate GPT response using rich context
+        try:
+            reply = generate_response(message_body, wa_id, name)
+        except Exception as gpt_error:
+            logging.exception(f"[GPT Worker] GPT failed for {wa_id}: {gpt_error}")
+            fallback = "Sorry, we're facing a temporary issue. Please try again in a few minutes."
+            send_message(get_text_message_input(wa_id, fallback))
+            return
 
         if reply:
             send_message(
