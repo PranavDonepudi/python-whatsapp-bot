@@ -27,13 +27,6 @@ def handle_gpt_reply(payload):
 
     logging.info("[GPT Worker] Handling message from %s: %s", wa_id, message_body)
 
-    # Skip unsupported or empty messages
-    if not message_body or message_type not in ["text", "document"]:
-        logging.warning(
-            "[GPT Worker] Skipping unsupported or empty message from %s", wa_id
-        )
-        return
-
     try:
         # Step 1: Check or create thread
         thread_id = check_if_thread_exists(wa_id)
@@ -49,7 +42,12 @@ def handle_gpt_reply(payload):
             )  # Push to background
             handle_document_upload_async.delay(wa_id, media_id, filename, thread_id)
             return
-
+        # Skip unsupported or empty messages
+        if not message_body or message_type not in ["text", "document"]:
+            logging.warning(
+                "[GPT Worker] Skipping unsupported or empty message from %s", wa_id
+            )
+            return
         # Step 3: Generate GPT response using context
         try:
             reply = generate_response(message_body, wa_id, name)
