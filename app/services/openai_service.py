@@ -34,7 +34,10 @@ def create_assistant():
 
 def check_if_thread_exists(wa_id):
     item = get_thread(wa_id)
-    return item["thread_id"] if item else None
+    if not item or "thread_id" not in item:
+        logging.warning("Thread record for %s is missing 'thread_id'", wa_id)
+        return None
+    return item["thread_id"]
 
 
 def poll_until_complete(thread_id, run_id, timeout_secs=10, poll_interval=0.3):
