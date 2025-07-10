@@ -37,10 +37,9 @@ def check_if_thread_exists(wa_id):
     return item["thread_id"] if item else None
 
 
-def poll_until_complete(thread_id, run_id, timeout_secs=20):
-    for _ in range(timeout_secs):
+def poll_until_complete(thread_id, run_id, timeout_secs=10, poll_interval=0.3):
+    for _ in range(int(timeout_secs / poll_interval)):
         run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
-        logging.debug(f"[poll] Run status: {run.status}")
         if run.status == "completed":
             return True
         elif run.status in ("failed", "cancelled", "expired"):
@@ -48,7 +47,7 @@ def poll_until_complete(thread_id, run_id, timeout_secs=20):
                 "Run failed for thread %s. Error: %s", thread_id, run.last_error
             )
             return False
-        time.sleep(1)
+        time.sleep(poll_interval)
     logging.error("Timeout: Run did not complete for thread: %s", thread_id)
     return False
 
@@ -189,18 +188,21 @@ def generate_response(message_body, wa_id, name):
     thread_id = check_if_thread_exists(wa_id)
     if thread_id:
         logging.info("Using existing thread for %s", wa_id)
-        thread = client.beta.threads.retrieve(thread_id)
     else:
         logging.info("Creating new thread for %s", wa_id)
         thread = client.beta.threads.create()
         thread_id = thread.id
         save_thread(wa_id, thread_id)
 
-    # Collect context
-    context_messages = get_recent_messages(wa_id, limit=4)
+        # 💤 Let OpenAI hydrate the thread before writing to it
+        time.sleep(0.3)
+
+    # 🧠 Collect recent context (reduce to last 2 messages for speed)
+    context_messages = get_recent_messages(wa_id, limit=2)
     context_str = "\n".join(
         f"{m['message_type'].capitalize()}: {m['message_body'][:300]}"
         for m in reversed(context_messages)
+        if m["message_body"]
     )
 
     prompt = (
@@ -211,15 +213,21 @@ def generate_response(message_body, wa_id, name):
         f"Latest message: {message_body}"
     )
 
-    # Save user message
+    # Save user message to DB
     msg_id_user = str(uuid.uuid4())
     save_message(wa_id, msg_id_user, message_body, "user")
 
-    # Add message to OpenAI
+    # Add prompt to OpenAI thread
     safe_add_message_to_thread(thread_id, prompt)
+
+    # Run assistant and get response (with lower poll latency)
     response = run_assistant(thread_id, name)
 
-    # Save assistant response
+    if not response:
+        logging.warning(f"[generate_response] GPT gave no response for {wa_id}")
+        return "Sorry, I couldn't process that right now. Please try again shortly."
+
+    # Save assistant reply to DB
     msg_id_assistant = str(uuid.uuid4())
     save_message(wa_id, msg_id_assistant, response, "assistant")
 
