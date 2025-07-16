@@ -55,22 +55,21 @@ def poll_until_complete(thread_id, run_id, timeout_secs=10, poll_interval=0.3):
     return False
 
 
-def run_assistant(thread_id, name, message_body=None, retries=3, delay=2):
+def run_assistant(thread_id, name, retries=3, delay=2):
+    """
+    Starts a new run using the thread_id. Assumes latest user message is already added to the thread.
+    Returns the latest assistant response or fallback if none found.
+    """
     for attempt in range(retries):
         try:
             assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
 
-            if message_body:
-                instructions = (
-                    f"You are talking to {name}, a job candidate. "
-                    f"Their message is: '{message_body}'. "
-                    "Be warm and professional. Keep the response under 500 tokens."
-                )
-            else:
-                instructions = (
-                    f"You are talking to {name}, a job candidate. "
-                    "Be warm and professional. Keep the response under 500 tokens."
-                )
+            instructions = (
+                f"You are talking to {name}, a job candidate. "
+                "Be warm, professional, and helpful. Avoid repeating the same answers. "
+                "Do not include unnecessary closings like 'feel free to reach out again' unless the conversation is ending. "
+                "Use previous thread context and respond directly to the candidate's latest message."
+            )
 
             run = client.beta.threads.runs.create(
                 thread_id=thread_id,
@@ -79,14 +78,15 @@ def run_assistant(thread_id, name, message_body=None, retries=3, delay=2):
             )
 
             if not poll_until_complete(thread_id, run.id):
-                raise RuntimeError(f"Run failed or timed out for thread {thread_id}")
+                logging.warning(
+                    "Assistant run did not complete for thread %s", thread_id
+                )
+                return None
 
             messages = client.beta.threads.messages.list(thread_id=thread_id, limit=5)
             for msg in reversed(messages.data):
                 if msg.role == "assistant":
                     return msg.content[0].text.value
-
-            raise ValueError("No assistant message found")
 
         except openai.InternalServerError as e:
             logging.warning(
@@ -188,42 +188,33 @@ def run_assistant_and_get_response(wa_id, name, user_message=None):
 
 
 def generate_response(message_body, wa_id, name):
+    """
+    Handles generating assistant response:
+    1. Checks/creates thread
+    2. Adds user message to thread and DB
+    3. Triggers assistant run
+    4. Stores and returns assistant response
+    """
     thread_id = check_if_thread_exists(wa_id)
-    if thread_id:
-        logging.info("Using existing thread for %s", wa_id)
-    else:
+    if not thread_id:
         logging.info("Creating new thread for %s", wa_id)
         thread = client.beta.threads.create()
         thread_id = thread.id
         save_thread(wa_id, thread_id)
-
-        # Let OpenAI hydrate the thread before writing to it
         time.sleep(0.3)
-
-    # Collect recent context (reduce to last 2 messages for speed)
-    context_messages = get_recent_messages(wa_id, limit=2)
-    context_str = "\n".join(
-        f"{m['message_type'].capitalize()}: {m['message_body'][:300]}"
-        for m in reversed(context_messages)
-        if m["message_body"]
-    )
-
-    prompt = (
-        f"The candidate's name is {name}. This is a WhatsApp chat. "
-        "Below are the last few messages exchanged. Use them for context. "
-        "Do not include greetings, closing lines, or signatures.\n\n"
-        f"{context_str}\n\n"
-        f"Latest message: {message_body}"
-    )
 
     # Save user message to DB
     msg_id_user = str(uuid.uuid4())
     save_message(wa_id, msg_id_user, message_body, "user")
 
-    # Add prompt to OpenAI thread
-    safe_add_message_to_thread(thread_id, prompt)
+    # Add user message to OpenAI thread
+    try:
+        safe_add_message_to_thread(thread_id, message_body)
+    except Exception as e:
+        logging.error("Failed to add message to thread: %s", e)
+        return "Sorry, we couldn't process your message right now."
 
-    # Run assistant and get response (with lower poll latency)
+    # Run assistant and get response
     response = run_assistant(thread_id, name)
 
     if not response:
