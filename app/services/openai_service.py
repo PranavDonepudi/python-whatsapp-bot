@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-import boto3
+import json
 import uuid
 from dotenv import load_dotenv
 import openai
@@ -9,7 +9,6 @@ from openai import OpenAI
 from app.services.dynamodb import (
     get_thread,
     save_message,
-    get_recent_messages,
 )
 from app.services.dynamodb import save_thread
 
@@ -236,3 +235,80 @@ def handle_candidate_reply(message, wa_id, name):
         wa_id,
         name,
     )
+
+
+def analyze_uploaded_document_with_gpt(
+    wa_id: str, name: str, file_bytes: bytes, filename: str, content_type: str
+) -> dict:
+    """
+    Uploads a document to OpenAI, asks assistant to validate if it's a resume,
+    and returns a JSON object with 'is_resume' and 'reason'.
+    """
+
+    try:
+        # 1. Upload file to OpenAI
+        file_obj = (filename, file_bytes, content_type)
+        openai_file = client.files.create(file=file_obj, purpose="assistants")
+
+        # 2. Check or create thread
+        thread_data = get_thread(wa_id)
+        if not thread_data:
+            thread = client.beta.threads.create()
+            thread_id = thread.id
+            save_thread(wa_id, thread_id)
+        else:
+            thread_id = thread_data["thread_id"]
+
+        # 3. Add file to thread with prompt
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content="Please check the uploaded document and tell me if it's a valid resume. Respond in JSON.",
+            attachments=[openai_file.id],
+        )
+
+        # 4. Run assistant with strict JSON instruction
+        instructions = (
+            f"You are reviewing a document uploaded by {name}, a job candidate. "
+            "Analyze the file and respond ONLY in this JSON format:\n\n"
+            '{\n  "is_resume": true/false,\n  "reason": "..."\n}\n\n'
+            "Consider it a resume only if it contains sections like 'Experience', 'Education', or 'Skills'."
+        )
+
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=OPENAI_ASSISTANT_ID,
+            instructions=instructions,
+        )
+
+        # 5. Poll until complete
+        for _ in range(30):  # up to ~9 seconds
+            run_status = client.beta.threads.runs.retrieve(
+                thread_id=thread_id, run_id=run.id
+            )
+            if run_status.status == "completed":
+                break
+            elif run_status.status in ("failed", "cancelled", "expired"):
+                logging.error("Document run failed: %s", run_status.last_error)
+                return None
+            time.sleep(0.3)
+
+        # 6. Get assistant response
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        for msg in reversed(messages.data):
+            if msg.role == "assistant":
+                raw_response = msg.content[0].text.value
+                try:
+                    result = json.loads(raw_response)
+                    logging.info("Parsed GPT JSON: %s", result)
+                    return result
+                except json.JSONDecodeError:
+                    logging.warning("GPT did not return valid JSON: %s", raw_response)
+                    return None
+
+        logging.warning("No assistant response found.")
+        return None
+
+    except Exception as e:
+        logging.exception("Error analyzing document with GPT:")
+        return None

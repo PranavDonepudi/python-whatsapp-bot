@@ -1,18 +1,25 @@
 # --- app/tasks/gpt_reply_worker.py ---
 import logging
 import uuid
+import json
 from celery_app import app
+from app.services.dynamodb import get_thread, save_thread
 from openai import OpenAI
-from app.services.dynamodb import save_thread
 from app.services.whatsapp_service import (
     send_message,
     get_text_message_input,
     process_text_for_whatsapp,
+    download_whatsapp_media,
 )
 from app.tasks.background_tasks import (
     handle_document_upload_async,
 )
-from app.services.openai_service import check_if_thread_exists, generate_response
+from app.services.openai_service import (
+    check_if_thread_exists,
+    generate_response,
+    analyze_uploaded_document_with_gpt,
+)
+
 
 client = OpenAI()
 
@@ -37,10 +44,60 @@ def handle_gpt_reply(payload):
 
         # Step 2: Handle document uploads separately
         if message_type == "document":
-            send_message(
-                get_text_message_input(wa_id, "Thanks! We've received your resume.")
-            )  # Push to background
-            handle_document_upload_async.delay(wa_id, media_id, filename, thread_id)
+            try:
+                # Step 1: Download file from WhatsApp
+                file_bytes, filename, content_type = download_whatsapp_media(
+                    media_id, filename
+                )
+
+                # Step 2: Analyze with GPT Assistant
+                result = analyze_uploaded_document_with_gpt(
+                    wa_id=wa_id,
+                    name=name,
+                    file_bytes=file_bytes,
+                    filename=filename,
+                    content_type=content_type,
+                )
+
+                # Step 3: Check GPT result
+                if not result:
+                    send_message(
+                        get_text_message_input(
+                            wa_id,
+                            "Sorry, we couldn't verify your document right now. Please try again.",
+                        )
+                    )
+                    return
+
+                # Step 4: If it's a resume, acknowledge and push to background
+                if result.get("is_resume"):
+                    send_message(
+                        get_text_message_input(
+                            wa_id, "Thanks! We've received your resume."
+                        )
+                    )
+                    # Trigger background task to handle document upload
+                    handle_document_upload_async.delay(
+                        wa_id, media_id, filename, thread_id
+                    )
+
+                else:
+                    # Step 5: Not a resume — notify user
+                    send_message(
+                        get_text_message_input(
+                            wa_id,
+                            f"Sorry, this doesn't appear to be a resume.\nReason: {result.get('reason', 'No reason provided.')}",
+                        )
+                    )
+
+            except Exception as e:
+                logging.exception("Error handling document upload")
+                send_message(
+                    get_text_message_input(
+                        wa_id,
+                        "Something went wrong while processing your document. Please try again.",
+                    )
+                )
             return
         # Skip unsupported or empty messages
         if not message_body or message_type not in ["text", "document"]:
