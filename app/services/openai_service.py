@@ -264,7 +264,7 @@ def analyze_uploaded_document_with_gpt(
             thread_id=thread_id,
             role="user",
             content="Please check the uploaded document and tell me if it's a valid resume. Respond in JSON.",
-            attachments=[openai_file.id],
+            attachments=[{"file_id": openai_file.id}],
         )
 
         # 4. Run assistant with strict JSON instruction
