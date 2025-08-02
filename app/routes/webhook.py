@@ -44,7 +44,29 @@ def webhook_post():
                     "message_id": message.get("id"),
                 }
             )
-        return jsonify({"status": "queued"}), 200
+        statuses = (
+            body.get("entry", [])[0]
+            .get("changes", [])[0]
+            .get("value", {})
+            .get("statuses", [])
+        )
+        for status in statuses:
+            message_id = status.get("id")
+            status_type = status.get("status")
+            errors = status.get("errors", [])
+            wa_id = status.get("recipient_id")
+
+            logging.info(
+                f"Status update: {status_type} for {wa_id} (msg_id={message_id})"
+            )
+
+            if status_type == "failed":
+                for error in errors:
+                    logging.error(
+                        f"Message failed for {wa_id}: {error.get('code')} - {error.get('title')}"
+                    )
+
+        return jsonify({"status": "processed"}), 200
     except Exception as e:
         logging.exception("Webhook failed")
         return jsonify({"error": str(e)}), 500
