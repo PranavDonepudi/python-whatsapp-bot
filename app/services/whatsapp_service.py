@@ -80,8 +80,7 @@ def save_file_to_s3(file_bytes: bytes, filename: str, content_type: str) -> str:
 
     client = _get_s3_client()
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    key = f"resumes/{timestamp}_{filename}"
-
+    key = f"raw/{timestamp}_{_safe_name(filename)}"
     client.put_object(
         Bucket=RESUME_BUCKET,
         Key=key,
@@ -90,6 +89,15 @@ def save_file_to_s3(file_bytes: bytes, filename: str, content_type: str) -> str:
     )
     logging.info("Uploaded to S3 key: %s/%s", RESUME_BUCKET, key)
     return f"https://{RESUME_BUCKET}.s3.amazonaws.com/{key}"
+
+
+_SAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def _safe_name(name: str) -> str:
+    # Drop any path parts and replace odd chars with underscores
+    base = os.path.basename(name)
+    return _SAFE_CHARS.sub("_", base)
 
 
 def process_text_for_whatsapp(text: str) -> str:
