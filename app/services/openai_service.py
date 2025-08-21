@@ -56,46 +56,68 @@ def poll_until_complete(thread_id, run_id, timeout_secs=10, poll_interval=0.3):
 
 def run_assistant(thread_id, name, retries=3, delay=2):
     """
-    Starts a new run using the thread_id. Assumes latest user message is already added to the thread.
-    Returns the latest assistant response or fallback if none found.
+    Start a run on the given thread (assumes the latest user message has already
+    been added to the thread) and return the NEWEST assistant reply.
+
+    Key differences vs before:
+    - Do NOT reverse the messages list (the SDK already returns newest → oldest).
+    - Return the first assistant message in that newest-first list.
+    - Concatenate multiple text parts in the assistant message (if any).
     """
     for attempt in range(retries):
         try:
+            # Fetch the assistant config (by id you already created)
             assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
 
             instructions = (
                 f"You are talking to {name}, a job candidate. "
                 "Be warm, professional, and helpful. Avoid repeating the same answers. "
-                "Do not include unnecessary closings like 'feel free to reach out again' unless the conversation is ending. "
                 "Use previous thread context and respond directly to the candidate's latest message."
             )
 
+            # Create a run on this thread
             run = client.beta.threads.runs.create(
                 thread_id=thread_id,
                 assistant_id=assistant.id,
                 instructions=instructions,
             )
 
+            # Wait for completion or failure
             if not poll_until_complete(thread_id, run.id):
                 logging.warning(
                     "Assistant run did not complete for thread %s", thread_id
                 )
                 return None
 
-            messages = client.beta.threads.messages.list(thread_id=thread_id, limit=5)
-            for msg in reversed(messages.data):
+            # Messages are returned NEWEST → OLDEST. Grab the first assistant message.
+            msgs = client.beta.threads.messages.list(thread_id=thread_id, limit=50)
+            for msg in msgs.data:  # newest first
                 if msg.role == "assistant":
-                    return msg.content[0].text.value
+                    # Concatenate all text segments if present (attachments/tool outputs are ignored)
+                    parts = []
+                    for part in msg.content:
+                        text = getattr(part, "text", None)
+                        if text and getattr(text, "value", None):
+                            parts.append(text.value)
+                    reply = "\n".join(parts).strip() if parts else ""
+                    if reply:
+                        return reply
+
+            logging.error("No assistant response found in thread: %s", thread_id)
+            return None
 
         except openai.InternalServerError as e:
             logging.warning(
-                f"[run_assistant] Attempt {attempt + 1}/{retries} - OpenAI server error: {e}"
+                "[run_assistant] Attempt %d/%d - OpenAI server error: %s",
+                attempt + 1,
+                retries,
+                e,
             )
             time.sleep(delay)
 
-        except Exception as e:
+        except Exception:
             logging.exception(
-                f"[run_assistant] Unhandled error on attempt {attempt + 1}"
+                "[run_assistant] Unhandled error on attempt %d", attempt + 1
             )
             raise
 
@@ -240,77 +262,59 @@ def handle_candidate_reply(message, wa_id, name):
 def analyze_uploaded_document_with_gpt(
     wa_id: str, name: str, file_bytes: bytes, filename: str, content_type: str
 ) -> dict:
-    """
-    Uploads a document to OpenAI, asks assistant to validate if it's a resume,
-    and returns a JSON object with 'is_resume' and 'reason'.
-    """
-
     try:
-        # 1. Upload file to OpenAI
         file_obj = (filename, file_bytes, content_type)
         openai_file = client.files.create(file=file_obj, purpose="assistants")
 
-        # 2. Check or create thread
-        thread_data = get_thread(wa_id)
-        if not thread_data:
-            thread = client.beta.threads.create()
-            thread_id = thread.id
-            save_thread(wa_id, thread_id)
-        else:
-            thread_id = thread_data["thread_id"]
+        # Use a TEMP thread for analysis, not the chat thread
+        temp_thread = client.beta.threads.create()
 
-        # 3. Add file to thread with prompt
         client.beta.threads.messages.create(
-            thread_id=thread_id,
+            thread_id=temp_thread.id,
             role="user",
-            content="Please check the uploaded document and tell me if it's a valid resume. Respond in JSON.",
+            content=(
+                "Please check the uploaded document and tell me if it's a valid resume. "
+                "Respond ONLY in JSON with keys is_resume (boolean) and reason (string)."
+            ),
             attachments=[
                 {"file_id": openai_file.id, "tools": [{"type": "file_search"}]}
             ],
-        )
-
-        # 4. Run assistant with strict JSON instruction
-        instructions = (
-            f"You are reviewing a document uploaded by {name}, a job candidate. "
-            "Analyze the file and respond ONLY in this JSON format:\n\n"
-            '{\n  "is_resume": true/false,\n  "reason": "..."\n}\n\n'
-            "Consider it a resume only if it contains sections like 'Experience', 'Education', or 'Skills'."
+            metadata={"kind": "resume_check"},
         )
 
         run = client.beta.threads.runs.create(
-            thread_id=thread_id,
+            thread_id=temp_thread.id,
             assistant_id=OPENAI_ASSISTANT_ID,
-            instructions=instructions,
+            instructions=(
+                f"You are reviewing a document uploaded by {name}. "
+                'Return strictly: {"is_resume": true/false, "reason": "..."}'
+            ),
+            metadata={"kind": "resume_check"},
         )
 
-        # 5. Poll until complete
-        for _ in range(30):  # up to ~9 seconds
-            run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id, run_id=run.id
+        # Poll
+        for _ in range(40):
+            status = client.beta.threads.runs.retrieve(
+                thread_id=temp_thread.id, run_id=run.id
             )
-            if run_status.status == "completed":
+            if status.status == "completed":
                 break
-            elif run_status.status in ("failed", "cancelled", "expired"):
-                logging.error("Document run failed: %s", run_status.last_error)
+            if status.status in ("failed", "cancelled", "expired"):
+                logging.error("Document run failed: %s", status.last_error)
                 return None
-            time.sleep(0.3)
+            time.sleep(0.25)
 
-        # 6. Get assistant response
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
-        for msg in reversed(messages.data):
+        # Read newest assistant message from temp thread only
+        messages = client.beta.threads.messages.list(thread_id=temp_thread.id, limit=10)
+        for msg in messages.data:
             if msg.role == "assistant":
-                raw_response = msg.content[0].text.value
+                raw = msg.content[0].text.value
                 try:
-                    result = json.loads(raw_response)
-                    logging.info("Parsed GPT JSON: %s", result)
-                    return result
+                    return json.loads(raw)
                 except json.JSONDecodeError:
-                    logging.warning("GPT did not return valid JSON: %s", raw_response)
+                    logging.warning("Non-JSON resume check response: %s", raw)
                     return None
-
-        logging.warning("No assistant response found.")
         return None
-
-    except Exception as e:
+    except Exception:
         logging.exception("Error analyzing document with GPT:")
         return None
