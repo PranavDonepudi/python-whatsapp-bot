@@ -27,7 +27,7 @@ def create_assistant():
             "Use professional, warm language. Keep responses concise (under 300 words / 500 tokens). "
         ),
         tools=[{"type": "file_search"}],  # "retrival" Before
-        model="gpt-3.5-turbo-1106",
+        model="gpt-4o-mini",
     )
 
 
@@ -73,11 +73,6 @@ def run_assistant(thread_id, name, retries=3, delay=2, extra_instructions: str =
                 "Respond directly to the candidate's latest message."
             )
             instructions = base + "\n\n" + POLICY_INSTRUCTIONS
-            run = client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=assistant.id,
-                instructions=instructions,
-            )
             run = client.beta.threads.runs.create(
                 thread_id=thread_id,
                 assistant_id=assistant.id,
