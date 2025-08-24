@@ -155,7 +155,6 @@ def is_active_run(thread_id):
     )
 
 
-"""
 def run_assistant_and_get_response(wa_id, name, user_message=None):
     thread_data = get_thread(wa_id)
     if not thread_data:
@@ -205,10 +204,8 @@ def run_assistant_and_get_response(wa_id, name, user_message=None):
     except Exception as e:
         logging.exception("OpenAI assistant failed for thread %s: %s", thread_id, e)
         return None
-"""
 
 
-"""
 def handle_candidate_reply(message, wa_id, name):
     if "update" in message.lower().strip():
         return "Sure! Please upload your updated resume and our team will review it shortly."
@@ -217,7 +214,6 @@ def handle_candidate_reply(message, wa_id, name):
         wa_id,
         name,
     )
-"""
 
 
 def generate_response(message_body, wa_id, name, extra_instructions: str = ""):
