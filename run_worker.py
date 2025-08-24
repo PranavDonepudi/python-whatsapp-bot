@@ -33,8 +33,8 @@ def poll_sqs():
             response = sqs.receive_message(
                 QueueUrl=QUEUE_URL,
                 MaxNumberOfMessages=5,
-                WaitTimeSeconds=10,  # long polling
-                VisibilityTimeout=60,
+                WaitTimeSeconds=20,  # long polling
+                VisibilityTimeout=90,
             )
 
             messages = response.get("Messages", [])
@@ -51,6 +51,9 @@ def poll_sqs():
                     logging.info("[Worker] Deleted message from queue.")
                 except Exception as e:
                     logging.exception(f"[Worker] Failed to process message: {e}")
+            # tiny sleep to avoid tight loop on empty
+            if not response.get("Messages"):
+                time.sleep(0.5)
 
         except ClientError as e:
             logging.error(f"[Worker] AWS ClientError: {e}")

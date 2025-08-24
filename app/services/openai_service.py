@@ -54,46 +54,30 @@ def poll_until_complete(thread_id, run_id, timeout_secs=10, poll_interval=0.3):
     return False
 
 
-def run_assistant(thread_id, name, retries=3, delay=2):
-    """
-    Start a run on the given thread (assumes the latest user message has already
-    been added to the thread) and return the NEWEST assistant reply.
-
-    Key differences vs before:
-    - Do NOT reverse the messages list (the SDK already returns newest → oldest).
-    - Return the first assistant message in that newest-first list.
-    - Concatenate multiple text parts in the assistant message (if any).
-    """
+def run_assistant(thread_id, name, retries=3, delay=2, extra_instructions: str = ""):
     for attempt in range(retries):
         try:
-            # Fetch the assistant config (by id you already created)
             assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
-
-            instructions = (
+            base = (
                 f"You are talking to {name}, a job candidate. "
-                "Be warm, professional, and helpful. Avoid repeating the same answers. "
-                "Use previous thread context and respond directly to the candidate's latest message."
+                "Be warm, professional, and helpful. Avoid repetition. "
+                "Respond directly to the candidate's latest message."
             )
-
-            # Create a run on this thread
+            instructions = base + (
+                "\n\n" + extra_instructions if extra_instructions else ""
+            )
             run = client.beta.threads.runs.create(
                 thread_id=thread_id,
                 assistant_id=assistant.id,
                 instructions=instructions,
             )
 
-            # Wait for completion or failure
             if not poll_until_complete(thread_id, run.id):
-                logging.warning(
-                    "Assistant run did not complete for thread %s", thread_id
-                )
                 return None
 
-            # Messages are returned NEWEST → OLDEST. Grab the first assistant message.
             msgs = client.beta.threads.messages.list(thread_id=thread_id, limit=50)
-            for msg in msgs.data:  # newest first
+            for msg in msgs.data:  # NEWEST → OLDEST
                 if msg.role == "assistant":
-                    # Concatenate all text segments if present (attachments/tool outputs are ignored)
                     parts = []
                     for part in msg.content:
                         text = getattr(part, "text", None)
@@ -102,52 +86,66 @@ def run_assistant(thread_id, name, retries=3, delay=2):
                     reply = "\n".join(parts).strip() if parts else ""
                     if reply:
                         return reply
-
-            logging.error("No assistant response found in thread: %s", thread_id)
             return None
-
         except openai.InternalServerError as e:
             logging.warning(
-                "[run_assistant] Attempt %d/%d - OpenAI server error: %s",
+                "[run_assistant] Attempt %d/%d - server error: %s",
                 attempt + 1,
                 retries,
                 e,
             )
             time.sleep(delay)
-
         except Exception:
-            logging.exception(
-                "[run_assistant] Unhandled error on attempt %d", attempt + 1
-            )
+            logging.exception("[run_assistant] Unhandled error")
             raise
+    raise RuntimeError("Failed to retrieve assistant after retries")
 
-    raise RuntimeError("[run_assistant] Failed to retrieve assistant after retries")
+
+def wait_until_idle(thread_id: str, timeout: float = 12.0, poll: float = 0.3) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        runs = client.beta.threads.runs.list(thread_id=thread_id, limit=1)
+        busy = runs.data and runs.data[0].status in (
+            "in_progress",
+            "queued",
+            "requires_action",
+        )
+        if not busy:
+            return True
+        time.sleep(poll)
+    return False
 
 
 def safe_add_message_to_thread(
-    thread_id: str, content: str, retries: int = 5, delay: float = 1.0
+    thread_id: str, content: str, wa_id: str, retries: int = 5, delay: float = 0.6
 ):
+    tag = f"{wa_id}:{uuid.uuid4().hex[:8]}"
     for attempt in range(retries):
-        try:
-            client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=content,
-            )
-            return
-        except Exception as e:
-            error_message = str(e)
-            if "while a run" in error_message and attempt < retries - 1:
-                logging.warning(
-                    "Run active for thread %s. Retrying in %.1fs (attempt %d)...",
-                    thread_id,
-                    delay,
-                    attempt + 1,
-                )
-                time.sleep(delay)
-            else:
-                logging.error("Failed to add message to thread: %s", error_message)
-                raise
+        wait_until_idle(thread_id, timeout=5)
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=f"{content}\n\n[MSG_TAG:{tag}]",
+            metadata={"wa_id": wa_id, "msg_tag": tag},
+        )
+        # verify it's the newest user
+        msgs = client.beta.threads.messages.list(thread_id=thread_id, limit=10)
+        for m in msgs.data:  # newest → oldest
+            if m.role == "user":
+                meta = getattr(m, "metadata", None) or {}
+                text = (
+                    m.content
+                    and getattr(m.content[0], "text", None)
+                    and m.content[0].text.value
+                ) or ""
+                if meta.get("msg_tag") == tag or text.endswith(f"[MSG_TAG:{tag}]"):
+                    return tag
+                break
+        logging.warning(
+            "Top user turn not ours; retrying add (attempt %d)", attempt + 1
+        )
+        time.sleep(delay)
+    raise RuntimeError("Could not verify user message was added to the thread")
 
 
 def is_active_run(thread_id):
@@ -157,6 +155,7 @@ def is_active_run(thread_id):
     )
 
 
+"""
 def run_assistant_and_get_response(wa_id, name, user_message=None):
     thread_data = get_thread(wa_id)
     if not thread_data:
@@ -206,49 +205,10 @@ def run_assistant_and_get_response(wa_id, name, user_message=None):
     except Exception as e:
         logging.exception("OpenAI assistant failed for thread %s: %s", thread_id, e)
         return None
+"""
 
 
-def generate_response(message_body, wa_id, name):
-    """
-    Handles generating assistant response:
-    1. Checks/creates thread
-    2. Adds user message to thread and DB
-    3. Triggers assistant run
-    4. Stores and returns assistant response
-    """
-    thread_id = check_if_thread_exists(wa_id)
-    if not thread_id:
-        logging.info("Creating new thread for %s", wa_id)
-        thread = client.beta.threads.create()
-        thread_id = thread.id
-        save_thread(wa_id, thread_id)
-        time.sleep(0.3)
-
-    # Save user message to DB
-    msg_id_user = str(uuid.uuid4())
-    save_message(wa_id, msg_id_user, message_body, "user")
-
-    # Add user message to OpenAI thread
-    try:
-        safe_add_message_to_thread(thread_id, message_body)
-    except Exception as e:
-        logging.error("Failed to add message to thread: %s", e)
-        return "Sorry, we couldn't process your message right now."
-
-    # Run assistant and get response
-    response = run_assistant(thread_id, name)
-
-    if not response:
-        logging.warning(f"[generate_response] GPT gave no response for {wa_id}")
-        return "Sorry, I couldn't process that right now. Please try again shortly."
-
-    # Save assistant reply to DB
-    msg_id_assistant = str(uuid.uuid4())
-    save_message(wa_id, msg_id_assistant, response, "assistant")
-
-    return response
-
-
+"""
 def handle_candidate_reply(message, wa_id, name):
     if "update" in message.lower().strip():
         return "Sure! Please upload your updated resume and our team will review it shortly."
@@ -257,6 +217,30 @@ def handle_candidate_reply(message, wa_id, name):
         wa_id,
         name,
     )
+"""
+
+
+def generate_response(message_body, wa_id, name, extra_instructions: str = ""):
+    thread_id = check_if_thread_exists(wa_id)
+    if not thread_id:
+        thread = client.beta.threads.create()
+        thread_id = thread.id
+        save_thread(wa_id, thread_id)
+
+    # Persist and add to thread
+    msg_id_user = str(uuid.uuid4())
+    save_message(wa_id, msg_id_user, message_body, "user")
+
+    tag = safe_add_message_to_thread(thread_id, message_body, wa_id)  # <-- NEW
+
+    response = run_assistant(thread_id, name, extra_instructions=extra_instructions)
+    if not response:
+        response = "Sorry, I couldn't process that right now. Please try again shortly."
+
+    # Save assistant reply
+    msg_id_assistant = str(uuid.uuid4())
+    save_message(wa_id, msg_id_assistant, response, "assistant")
+    return response
 
 
 def analyze_uploaded_document_with_gpt(
@@ -266,15 +250,13 @@ def analyze_uploaded_document_with_gpt(
         file_obj = (filename, file_bytes, content_type)
         openai_file = client.files.create(file=file_obj, purpose="assistants")
 
-        # Use a TEMP thread for analysis, not the chat thread
         temp_thread = client.beta.threads.create()
-
         client.beta.threads.messages.create(
             thread_id=temp_thread.id,
             role="user",
             content=(
-                "Please check the uploaded document and tell me if it's a valid resume. "
-                "Respond ONLY in JSON with keys is_resume (boolean) and reason (string)."
+                "Please check the uploaded document and say if it's a valid resume. "
+                'Respond ONLY as JSON: {"is_resume": true/false, "reason": "..."}'
             ),
             attachments=[
                 {"file_id": openai_file.id, "tools": [{"type": "file_search"}]}
@@ -286,35 +268,36 @@ def analyze_uploaded_document_with_gpt(
             thread_id=temp_thread.id,
             assistant_id=OPENAI_ASSISTANT_ID,
             instructions=(
-                f"You are reviewing a document uploaded by {name}. "
-                'Return strictly: {"is_resume": true/false, "reason": "..."}'
+                'Return strictly JSON with keys "is_resume" (boolean) and "reason" (string).'
             ),
             metadata={"kind": "resume_check"},
         )
 
-        # Poll
+        # poll
+        import time, logging, json as _json
+
         for _ in range(40):
-            status = client.beta.threads.runs.retrieve(
+            s = client.beta.threads.runs.retrieve(
                 thread_id=temp_thread.id, run_id=run.id
             )
-            if status.status == "completed":
+            if s.status == "completed":
                 break
-            if status.status in ("failed", "cancelled", "expired"):
-                logging.error("Document run failed: %s", status.last_error)
+            if s.status in ("failed", "cancelled", "expired"):
+                logging.error("Resume check run failed: %s", s.last_error)
                 return None
             time.sleep(0.25)
 
-        # Read newest assistant message from temp thread only
-        messages = client.beta.threads.messages.list(thread_id=temp_thread.id, limit=10)
-        for msg in messages.data:
-            if msg.role == "assistant":
-                raw = msg.content[0].text.value
+        msgs = client.beta.threads.messages.list(thread_id=temp_thread.id, limit=10)
+        for m in msgs.data:
+            if m.role == "assistant":
+                raw = m.content[0].text.value
                 try:
-                    return json.loads(raw)
-                except json.JSONDecodeError:
-                    logging.warning("Non-JSON resume check response: %s", raw)
+                    return _json.loads(raw)
+                except _json.JSONDecodeError:
                     return None
         return None
     except Exception:
+        import logging
+
         logging.exception("Error analyzing document with GPT:")
         return None
