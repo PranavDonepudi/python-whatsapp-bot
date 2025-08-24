@@ -39,51 +39,71 @@ def check_if_thread_exists(wa_id):
     return item["thread_id"]
 
 
-def poll_until_complete(thread_id, run_id, timeout_secs=10, poll_interval=0.3):
-    for _ in range(int(timeout_secs / poll_interval)):
+def poll_until_complete(thread_id, run_id, timeout_secs=30, poll_interval=0.3):
+    """
+    Poll the run until it completes or fails.
+    Returns (completed: bool, status: str, last_error: Any)
+    """
+    deadline = time.time() + timeout_secs
+    while time.time() < deadline:
         run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
         if run.status == "completed":
-            return True
-        elif run.status in ("failed", "cancelled", "expired"):
-            logging.error(
-                "Run failed for thread %s. Error: %s", thread_id, run.last_error
-            )
-            return False
+            return True, run.status, None
+        if run.status in ("failed", "cancelled", "expired"):
+            return False, run.status, getattr(run, "last_error", None)
         time.sleep(poll_interval)
-    logging.error("Timeout: Run did not complete for thread: %s", thread_id)
-    return False
 
-
-POLICY_INSTRUCTIONS = """
-You CAN accept and process resume uploads sent as WhatsApp documents.
-If the user asks “Can I upload my resume here?”, answer YES and instruct them:
-- Upload as PDF/DOCX (max ~100 MB).
-If no file is provided yet, ask them to upload it.
-Always give one clear next step; avoid generic 'How can I help?' replies.
-"""
+    # Timeout: fetch one more time so we can log the actual status/last_error
+    run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
+    return False, run.status, getattr(run, "last_error", None)
 
 
 def run_assistant(thread_id, name, retries=3, delay=2, extra_instructions: str = ""):
+    """
+    Start a run on the given thread and return the NEWEST assistant reply.
+    - Appends POLICY_INSTRUCTIONS and any extra_instructions you pass.
+    - Logs run status/last_error on failure or timeout.
+    """
     for attempt in range(retries):
         try:
             assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
+
+            # Sanity check: make sure file_search is actually enabled on THIS assistant
+            tool_types = [getattr(t, "type", None) for t in (assistant.tools or [])]
+            if "file_search" not in tool_types:
+                logging.error(
+                    "[run_assistant] Assistant %s does not have file_search enabled. tools=%s",
+                    assistant.id,
+                    tool_types,
+                )
+
             base = (
                 f"You are talking to {name}, a job candidate. "
                 "Be warm, professional, and helpful. Avoid repetition. "
                 "Respond directly to the candidate's latest message."
             )
             instructions = base + "\n\n" + POLICY_INSTRUCTIONS
+            if extra_instructions:
+                instructions += "\n\n" + extra_instructions
+
             run = client.beta.threads.runs.create(
                 thread_id=thread_id,
                 assistant_id=assistant.id,
                 instructions=instructions,
             )
 
-            if not poll_until_complete(thread_id, run.id):
+            completed, status, last_error = poll_until_complete(thread_id, run.id)
+            if not completed:
+                logging.error(
+                    "[run_assistant] Run did not complete. status=%s last_error=%s",
+                    status,
+                    last_error,
+                )
                 return None
 
+            # NEWEST → OLDEST; return the first assistant message
             msgs = client.beta.threads.messages.list(thread_id=thread_id, limit=50)
-            for msg in msgs.data:  # NEWEST → OLDEST
+            for msg in msgs.data:
                 if msg.role == "assistant":
                     parts = []
                     for part in msg.content:
@@ -93,19 +113,36 @@ def run_assistant(thread_id, name, retries=3, delay=2, extra_instructions: str =
                     reply = "\n".join(parts).strip() if parts else ""
                     if reply:
                         return reply
+
+            logging.error(
+                "[run_assistant] No assistant message found after a completed run."
+            )
             return None
+
         except openai.InternalServerError as e:
             logging.warning(
-                "[run_assistant] Attempt %d/%d - server error: %s",
+                "[run_assistant] Attempt %d/%d - OpenAI server error: %s",
                 attempt + 1,
                 retries,
                 e,
             )
             time.sleep(delay)
-        except Exception:
-            logging.exception("[run_assistant] Unhandled error")
+        except Exception as e:
+            logging.exception(
+                "[run_assistant] Unhandled error on attempt %d: %r", attempt + 1, e
+            )
             raise
+
     raise RuntimeError("Failed to retrieve assistant after retries")
+
+
+POLICY_INSTRUCTIONS = """
+You CAN accept and process resume uploads sent as WhatsApp documents.
+If the user asks “Can I upload my resume here?”, answer YES and instruct them:
+- Upload as PDF/DOCX (max ~100 MB).
+If no file is provided yet, ask them to upload it.
+Always give one clear next step; avoid generic 'How can I help?' replies.
+"""
 
 
 def wait_until_idle(thread_id: str, timeout: float = 12.0, poll: float = 0.3) -> bool:
