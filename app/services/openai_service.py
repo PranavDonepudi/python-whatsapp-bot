@@ -26,7 +26,7 @@ def create_assistant():
             "You are a professional assistant for TechnoGen. Help candidates understand job opportunities. "
             "Use professional, warm language. Keep responses concise (under 300 words / 500 tokens). "
         ),
-        tools=[{"type": "retrieval"}],
+        tools=[{"type": "file_search"}],  # "retrival" Before
         model="gpt-3.5-turbo-1106",
     )
 
@@ -54,6 +54,15 @@ def poll_until_complete(thread_id, run_id, timeout_secs=10, poll_interval=0.3):
     return False
 
 
+POLICY_INSTRUCTIONS = """
+You CAN accept and process resume uploads sent as WhatsApp documents.
+If the user asks “Can I upload my resume here?”, answer YES and instruct them:
+- Upload as PDF/DOCX (max ~100 MB).
+If no file is provided yet, ask them to upload it.
+Always give one clear next step; avoid generic 'How can I help?' replies.
+"""
+
+
 def run_assistant(thread_id, name, retries=3, delay=2, extra_instructions: str = ""):
     for attempt in range(retries):
         try:
@@ -63,8 +72,11 @@ def run_assistant(thread_id, name, retries=3, delay=2, extra_instructions: str =
                 "Be warm, professional, and helpful. Avoid repetition. "
                 "Respond directly to the candidate's latest message."
             )
-            instructions = base + (
-                "\n\n" + extra_instructions if extra_instructions else ""
+            instructions = base + "\n\n" + POLICY_INSTRUCTIONS
+            run = client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=assistant.id,
+                instructions=instructions,
             )
             run = client.beta.threads.runs.create(
                 thread_id=thread_id,
@@ -167,7 +179,7 @@ def run_assistant_and_get_response(wa_id, name, user_message=None):
     if user_message:
         try:
             logging.debug(f"Adding user message to thread: {user_message}")
-            safe_add_message_to_thread(thread_id, user_message)
+            safe_add_message_to_thread(thread_id, user_message, wa_id)
         except Exception as e:
             logging.error("Failed to add user message: %s", e)
             return None
