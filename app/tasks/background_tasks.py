@@ -26,13 +26,15 @@ def store_thread_to_dynamodb(wa_id: str, thread_id: str):
 @app.task(name="tasks.handle_document_upload_async")
 def handle_document_upload_async(wa_id, media_id, filename, thread_id=None):
     try:
+        logging.info("[Celery] Start upload for %s file=%s", wa_id, filename)
         file_bytes, _, content_type = download_whatsapp_media(media_id, filename)
-        save_file_to_s3(file_bytes, filename, content_type)
+        s3_url = save_file_to_s3(file_bytes, filename, content_type)
+        logging.info("[Celery] Uploaded to S3: %s", s3_url)
 
         if thread_id:
             save_thread(wa_id, thread_id)
 
-        print(f"Uploaded resume for {wa_id}")
-
+        return {"ok": True, "s3_url": s3_url}
     except Exception as e:
-        print(f"[ERROR] Document upload failed for {wa_id}: {e}")
+        logging.exception("[Celery] Document upload failed for %s", wa_id)
+        return {"ok": False, "error": str(e)}
