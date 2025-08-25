@@ -10,8 +10,8 @@ from app.services.whatsapp_service import (
     get_text_message_input,
     process_text_for_whatsapp,
     download_whatsapp_media,
+    save_file_to_s3,  # <-- use your existing S3 helper
 )
-from app.tasks.background_tasks import handle_document_upload_async
 from app.services.openai_service import (
     check_if_thread_exists,
     generate_response,
@@ -30,17 +30,17 @@ def handle_gpt_reply(payload):
     media_id = payload.get("media_id")
     filename = payload.get("filename") or f"{wa_id}_{uuid.uuid4()}.pdf"
     message_type = payload.get("message_type", "text")
-    message_body = payload.get("message_body", "") or ""
+    message_body = (payload.get("message_body") or "").strip()
 
     logging.info(
         "[GPT Worker] Handling message from %s (type=%s): %s",
         wa_id,
         message_type,
-        (message_body[:200] if message_body else ""),
+        message_body[:200],
     )
 
     try:
-        # 1) Ensure we have an OpenAI thread for this user
+        # Ensure an OpenAI thread exists for this user
         thread_id = check_if_thread_exists(wa_id)
         if not thread_id:
             thread = client.beta.threads.create()
@@ -48,16 +48,16 @@ def handle_gpt_reply(payload):
             save_thread(wa_id, thread_id)
             logging.info("[GPT Worker] Created new thread %s for %s", thread_id, wa_id)
 
-        # 2) Document flow (handled fully here, then return)
+        # ========== DOCUMENT FLOW (synchronous upload) ==========
         if message_type == "document":
             try:
-                # Download from WhatsApp (bytes used for analysis only)
+                # 1) Download media from WhatsApp
                 file_bytes, effective_filename, content_type = download_whatsapp_media(
                     media_id, filename
                 )
-                filename = effective_filename or filename  # normalize
+                filename = effective_filename or filename
 
-                # Analyze in a TEMP thread so JSON never pollutes chat thread
+                # 2) Analyze in a TEMP thread (keeps JSON out of chat thread)
                 result = analyze_uploaded_document_with_gpt(
                     wa_id=wa_id,
                     name=name,
@@ -76,37 +76,29 @@ def handle_gpt_reply(payload):
                     return
 
                 if result.get("is_resume"):
-                    # Queue Celery task FIRST; only ACK if enqueue succeeds
+                    # 3) Upload to S3 synchronously
                     try:
-                        task = handle_document_upload_async.delay(
-                            wa_id, media_id, filename, thread_id
-                        )
-                        logging.info(
-                            "[GPT Worker] Queued resume upload task id=%s for %s",
-                            getattr(task, "id", None),
-                            wa_id,
-                        )
+                        s3_url = save_file_to_s3(file_bytes, filename, content_type)
+                        logging.info("[GPT Worker] Uploaded resume to S3: %s", s3_url)
                     except Exception:
                         logging.exception(
-                            "[GPT Worker] FAILED to queue resume upload task for %s",
-                            wa_id,
+                            "[GPT Worker] Synchronous S3 upload failed for %s", wa_id
                         )
                         send_message(
                             get_text_message_input(
                                 wa_id,
-                                "Something went wrong while queuing your document. Please try again.",
+                                "We couldn't process your document right now. Please try again.",
                             )
                         )
                         return
 
-                    # Now it’s safe to acknowledge
+                    # 4) Acknowledge only after successful upload
                     send_message(
                         get_text_message_input(
                             wa_id, "Thanks! We've received your resume."
                         )
                     )
                 else:
-                    # Not a resume
                     reason = result.get("reason", "No reason provided.")
                     send_message(
                         get_text_message_input(
@@ -123,33 +115,37 @@ def handle_gpt_reply(payload):
                         "Something went wrong while processing your document. Please try again.",
                     )
                 )
-            return  # document branch ends here
+            return  # end document branch
 
-        # 3) Text flow
-        if message_type != "text" or not message_body.strip():
+        # ========== TEXT FLOW ==========
+        if message_type != "text" or not message_body:
             logging.warning(
                 "[GPT Worker] Skipping unsupported or empty message from %s", wa_id
             )
             return
 
-        # Fast path: if user asks about uploading, always say YES
+        # Friendly fast-path: if user asks about uploading, always say YES
         if _UPLOAD_Q.search(message_body):
             send_message(
                 get_text_message_input(
                     wa_id,
-                    "Yes — you can upload your resume here as a document (PDF/DOCX). "
+                    "Yes — you can upload your resume here as a document (PDF/DOC/DOCX). "
                     "Once I receive it, I’ll analyze it and help you update or tailor it.",
                 )
             )
             return
 
-        # Generate GPT response using context (generate_response handles safe add + storage)
+        # Normal assistant reply (context-aware)
         try:
             reply = generate_response(message_body, wa_id, name)
         except Exception as gpt_error:
             logging.exception("[GPT Worker] GPT failed for %s: %s", wa_id, gpt_error)
-            fallback = "Sorry, we're facing a temporary issue. Please try again in a few minutes."
-            send_message(get_text_message_input(wa_id, fallback))
+            send_message(
+                get_text_message_input(
+                    wa_id,
+                    "Sorry, we're facing a temporary issue. Please try again in a few minutes.",
+                )
+            )
             return
 
         if reply:
